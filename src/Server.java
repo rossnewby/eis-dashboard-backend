@@ -21,16 +21,17 @@ public class Server {
             con.setRequestMethod("GET");
             con.setRequestProperty("Cookie", cookiename+"="+cookie);
 
-            BufferedReader in = new BufferedReader(
-                    new InputStreamReader(con.getInputStream()));
-            String inputLine;
-            StringBuffer response = new StringBuffer();
-            while ((inputLine = in.readLine()) != null) {
-                response.append(inputLine);
-            }
-            System.out.println(response.toString()); //print result
+            // Problem with security Certificate needs fixing
+//            BufferedReader in = new BufferedReader(
+//                    new InputStreamReader(con.getInputStream()));
+//            String inputLine;
+//            StringBuffer response = new StringBuffer();
+//            while ((inputLine = in.readLine()) != null) {
+//                response.append(inputLine);
+//            }
+//            System.out.println(response.toString()); //print result
 
-            in.close();
+//            in.close();
             con.disconnect();
         }
         catch (Exception e){
