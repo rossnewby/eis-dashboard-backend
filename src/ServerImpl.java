@@ -4,6 +4,8 @@
  * @Author Ross Newby
  */
 import javax.net.ssl.HttpsURLConnection;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.net.URL;
 import java.rmi.*;
 import java.rmi.server.UnicastRemoteObject;
@@ -25,21 +27,21 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
             con.setRequestProperty("Cookie", cookiename+"="+cookie);
 
             // Problem with security Certificate needs fixing
-//            BufferedReader in = new BufferedReader(
-//                    new InputStreamReader(con.getInputStream()));
-//            String inputLine;
-//            StringBuffer response = new StringBuffer();
-//            while ((inputLine = in.readLine()) != null) {
-//                response.append(inputLine);
-//            }
-//            System.out.println(response.toString()); //print result
+            BufferedReader in = new BufferedReader(
+                    new InputStreamReader(con.getInputStream()));
+            String inputLine;
+            StringBuffer response = new StringBuffer();
+            while ((inputLine = in.readLine()) != null) {
+                response.append(inputLine);
+            }
+            System.out.println(response.toString()); //print result
 
-//            in.close();
+            in.close();
             con.disconnect();
         }
         catch (Exception e){
             System.out.println("CKAN Connection Error: " + e);
-            // e.printStackTrace();
+            e.printStackTrace();
         }
     }
 

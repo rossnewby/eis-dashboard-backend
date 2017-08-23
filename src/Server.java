@@ -20,7 +20,7 @@ public class Server {
 
             /*Bind the ServerImpl class to the RMI registry for remote calls by clients*/
             ServerInterface c = new ServerImpl();
-            Naming.rebind("rmi://localhost:1099/QualityService", c);
+            Naming.rebind("rmi://localhost:1099/EISQualityService", c);
         }
         catch (Exception e) {
             System.out.println("RMI Binding Error: " + e);
@@ -31,6 +31,11 @@ public class Server {
     public static void main (String args []){
 
         System.out.println("Running...");
+
+        System.out.println(System.getProperty("java.vendor"));
+        System.out.println(System.getProperty("java.vendor.url"));
+        System.out.println(System.getProperty("java.version"));
+
         new Server();
     }
 }
