@@ -8,8 +8,8 @@ import java.rmi.*;
 
 public interface ServerInterface extends Remote{
 
-    //
-    public int method () throws RemoteException;
+    /*Submit CKAN HTTP request; acquire response as JSON string*/
+    public String ckanRequest(String url) throws RemoteException;
 
     //
     public int method2 () throws RemoteException;
