@@ -1,9 +1,10 @@
 import javax.net.ssl.HttpsURLConnection;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.URL;
 import java.rmi.Naming;
 import java.rmi.registry.LocateRegistry;
+import java.util.Date;
+import java.util.Properties;
 
 /**
  * @Author Ross Newby
@@ -23,18 +24,15 @@ public class Server {
             Naming.rebind("rmi://localhost:1099/EISQualityService", c);
         }
         catch (Exception e) {
-            System.out.println("RMI Binding Error: " + e);
-            // e.printStackTrace();
+            System.out.println("RMI Binding Error:");
+            e.printStackTrace();
         }
     }
 
     public static void main (String args []){
 
+        System.out.println("Java Version: " + System.getProperty("java.version"));
         System.out.println("Running...");
-
-        System.out.println(System.getProperty("java.vendor"));
-        System.out.println(System.getProperty("java.vendor.url"));
-        System.out.println(System.getProperty("java.version"));
 
         new Server();
     }
