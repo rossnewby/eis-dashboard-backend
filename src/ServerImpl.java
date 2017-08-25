@@ -26,8 +26,9 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
     private String apiuser = null;
     private String apipass = null;
 
-    private String meterMetadata = null;
-    private String loggerMetadata = null;
+    private JSONObject packageJSON = null;
+    private JSONObject meterJSON = null;
+    private JSONObject loggerJSON = null;
 
     public ServerImpl() throws RemoteException{
 
@@ -56,21 +57,19 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
 
         /*Get CKAN metadata and process*/
         try {
-            String ckanPackages = ckanRequest("ckan.lancaster.ac.uk/api/3/action/package_show?id=planonmetadata");
-            JSONObject obj = new JSONObject(ckanPackages);
-            JSONArray arr = obj.getJSONObject("result").getJSONArray("resources"); // Array of resource names available in CKAN
+            packageJSON = ckanRequest("ckan.lancaster.ac.uk/api/3/action/package_show?id=planonmetadata");
+            JSONArray arr = packageJSON.getJSONObject("result").getJSONArray("resources"); // Array of resource names available in CKAN
 
             String lookingFor = "Planon metadata - Meters Sensors";
             for (int i = 0; i < arr.length(); i++) {
                 if (arr.getJSONObject(i).getString("name").equals(lookingFor)){
-                    String name = arr.getJSONObject(i).getString("name");
+
                     String id = arr.getJSONObject(i).getString("id");
-                    System.out.println(name + " = " + id);
                     (new Thread() {
                         public void run() {
                             try {
                                 //Very large
-                                //meterMetadata = ckanRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
+                                //meterJSON = ckanRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
                             }
                             catch (Exception e){
                                 e.printStackTrace();
@@ -88,7 +87,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
                     (new Thread() {
                         public void run() {
                             try {
-                                loggerMetadata = ckanRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
+                                loggerJSON = ckanRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
                             }
                             catch (Exception e){
                                 e.printStackTrace();
@@ -113,7 +112,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
     * @param url Desired ckan url, excluding 'https://'
     * @return This returns the CKAN response as String
     * */
-    public String ckanRequest(String url) throws RemoteException{
+    public JSONObject ckanRequest(String url) throws RemoteException{
         StringBuffer response = null;
 
         try {
@@ -151,17 +150,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
         if (response == null){
             throw new RemoteException("CKAN Response 'null'");
         }
-        return response.toString();
-    }
-
-    //
-    public int method2 () throws RemoteException{
-        return 1;
-    }
-
-    //
-    public int method3 () throws RemoteException{
-        return 1;
+        return new JSONObject(response.toString());
     }
 
     // Simple file to text for testing ckan responses

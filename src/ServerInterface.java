@@ -4,16 +4,12 @@
  *
  * @Author Ross Newby
  */
+import org.json.JSONObject;
+
 import java.rmi.*;
 
 public interface ServerInterface extends Remote{
 
     /*Submit CKAN HTTP request; acquire response as JSON string*/
-    public String ckanRequest(String url) throws RemoteException;
-
-    //
-    public int method2 () throws RemoteException;
-
-    //
-    public int method3 () throws RemoteException;
+    public JSONObject ckanRequest(String url) throws RemoteException;
 }
