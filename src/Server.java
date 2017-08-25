@@ -14,7 +14,6 @@ public class Server {
 
     public Server(){
 
-        /*Bind the remote object to the RMI registry*/
         try {
             /*Start the RMI registry on port 1099*/
             Runtime.getRuntime().exec("rmiregistry 1099");
@@ -35,29 +34,7 @@ public class Server {
         System.out.println("Java Version: " + System.getProperty("java.version"));
         System.out.println("Running...");
 
-//        String url = "https://ckanapi:Quee8eec@ckan.lancaster.ac.uk/api/3/action/package_show?id=planonmetadata";
-//        try {
-//            System.out.println(getHTML(url));
-//        }
-//        catch (Exception e){
-//            e.printStackTrace();
-//        }
-
         new Server();
-    }
-
-    public static String getHTML(String urlToRead) throws Exception {
-        StringBuilder result = new StringBuilder();
-        URL url = new URL(urlToRead);
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod("GET");
-        BufferedReader rd = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-        String line;
-        while ((line = rd.readLine()) != null) {
-            result.append(line);
-        }
-        rd.close();
-        return result.toString();
     }
 }
 

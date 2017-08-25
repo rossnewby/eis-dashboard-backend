@@ -29,7 +29,13 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
     private JSONObject packageJSON = null;
     private JSONObject meterJSON = null;
     private JSONObject loggerJSON = null;
+    private Thread meterThread, loggerThread;
 
+    /**
+     * Initialises a server by reading basic authentication details and API data from config file.
+     * Queries CKAN datastore for all metadata and returns once JSON objects have been read completely.
+     * @throws RemoteException
+     */
     public ServerImpl() throws RemoteException{
 
         /*Read configuration file; populate variables*/
@@ -55,36 +61,37 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
             e.printStackTrace();
         }
 
-        /*Get CKAN metadata and process*/
+        /*Get CKAN metadata*/
         try {
             packageJSON = ckanRequest("ckan.lancaster.ac.uk/api/3/action/package_show?id=planonmetadata");
-            JSONArray arr = packageJSON.getJSONObject("result").getJSONArray("resources"); // Array of resource names available in CKAN
+            JSONArray packageList = packageJSON.getJSONObject("result").getJSONArray("resources"); // Array of resource names available in CKAN
 
             String lookingFor = "Planon metadata - Meters Sensors";
-            for (int i = 0; i < arr.length(); i++) {
-                if (arr.getJSONObject(i).getString("name").equals(lookingFor)){
+            for (int i = 0; i < packageList.length(); i++) {
+                if (packageList.getJSONObject(i).getString("name").equals(lookingFor)){
 
-                    String id = arr.getJSONObject(i).getString("id");
-                    (new Thread() {
+                    String id = packageList.getJSONObject(i).getString("id");
+                    meterThread = new Thread() {
                         public void run() {
                             try {
                                 //Very large
-                                //meterJSON = ckanRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
+                                meterJSON = ckanRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
                             }
                             catch (Exception e){
                                 e.printStackTrace();
                             }
                         }
-                    }).start();
+                    };
+                    meterThread.start();
                 }
             }
             lookingFor = "Planon metadata - Loggers Controllers"; // Search for logger / controller metadata
-            for (int i = 0; i < arr.length(); i++) { // for every package name in CKAN
-                if (arr.getJSONObject(i).getString("name").equals(lookingFor)){ // if package is loggers / controllers
+            for (int i = 0; i < packageList.length(); i++) { // for every package name in CKAN
+                if (packageList.getJSONObject(i).getString("name").equals(lookingFor)){ // if package is loggers / controllers
 
                     // Get package ID number and use this in another CKAN request for logger / controller metadata
-                    String id = arr.getJSONObject(i).getString("id");
-                    (new Thread() {
+                    String id = packageList.getJSONObject(i).getString("id");
+                    loggerThread = new Thread() {
                         public void run() {
                             try {
                                 loggerJSON = ckanRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
@@ -93,7 +100,8 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
                                 e.printStackTrace();
                             }
                         }
-                    }).start();
+                    };
+                    loggerThread.start();
                 }
             }
         }
@@ -105,42 +113,71 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
             System.out.println("Error Processing JSON String:");
             e.printStackTrace();
         }
+
+        /*Join threads; threads must be complete when constructor ends*/
+        try {
+            meterThread.join();
+            loggerThread.join();
+            System.out.println("Server Initialisation Successful");
+        }
+        catch (Exception e){
+            System.out.println("Metadata Threads Interrupted:");
+            e.printStackTrace();
+        }
     }
 
     /**
-     * Submit CKAN HTTP request with automatic basic authentication
-    * @param url Desired ckan url, excluding 'https://'
-    * @return This returns the CKAN response as String
+     * Submit CKAN HTTP request with automatic basic authentication and API header; specified by config file
+    * @param url Desired ckan url, excluding or including 'https://'
+    * @return This returns the CKAN response as a JSONObject
     * */
     public JSONObject ckanRequest(String url) throws RemoteException{
         StringBuffer response = null;
+        JSONObject ret = null;
 
         try {
-            // http://www.baeldung.com/java-http-request
-            URL newURL = new URL("https://"+apiuser+":"+apipass+"@"+url); // append basic authentication credentials and URL
+            // Make new HTTP connection
+            URL newURL;
+            if (url.contains("https://")){ //appends 'https://' to URL if needed
+                newURL = new URL(url);
+            }
+            else {
+                newURL = new URL("https://"+url);
+            }
             System.out.println("CKAN Requesting: " + newURL.toString());
             HttpsURLConnection con = (HttpsURLConnection) newURL.openConnection();
 
-            String userCredentials = apiuser+":"+apipass;
+            // Append headers to HTTP request
+            String userCredentials = apiuser+":"+apipass; // use basic authentication credentials from config file
             String basicAuth = "Basic " + new String(new Base64().encode(userCredentials.getBytes()));
             con.setRequestProperty ("Authorization", basicAuth);
-            con.setRequestProperty("X-CKAN-API-Key", apikey); //API key as request header
+            con.setRequestProperty("X-CKAN-API-Key", apikey); // personal API key (config file)
             con.setRequestMethod("GET");
             //con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
             //con.setUseCaches(false);
             //con.setDoInput(true);
             //con.setDoOutput(true);
 
+            // Read reply from HTTP request as String
             BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
             String inputLine;
             response = new StringBuffer();
             while ((inputLine = in.readLine()) != null) {
                 response.append(inputLine);
             }
-            System.out.println("CKAN Response: " + response.toString()); //print result
-            in.close();
 
-            // con.disconnect();
+            //parse return string to a JSON object
+            try {
+                ret = new JSONObject(response.toString());
+                System.out.println("CKAN Request Successful");
+            }
+            catch (Exception e){
+                System.out.println("CKAN Request Error:");
+                e.printStackTrace();
+            }
+
+            in.close(); //close connections
+            con.disconnect();
         }
         catch (Exception e){
             System.out.println("CKAN Connection Error:");
@@ -150,7 +187,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
         if (response == null){
             throw new RemoteException("CKAN Response 'null'");
         }
-        return new JSONObject(response.toString());
+        return ret;
     }
 
     // Simple file to text for testing ckan responses
