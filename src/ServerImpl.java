@@ -16,25 +16,26 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.rmi.*;
 import java.rmi.server.UnicastRemoteObject;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Properties;
 
 public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
 
-    private String cookie = null;
-    private String cookiename = null;
     private String apikey = null;
     private String apiuser = null;
     private String apipass = null;
 
-    private JSONObject packageJSON = null;
+    private JSONObject packageJSON = null; // JSON objects for all metadata
     private JSONObject meterJSON = null;
     private JSONObject loggerJSON = null;
-    private Thread meterThread, loggerThread;
+    private Thread meterThread, loggerThread; // threads for initial metadata reading
 
     /**
      * Initialises a server by reading basic authentication details and API data from config file.
      * Queries CKAN datastore for all metadata and returns once JSON objects have been read completely.
      * @throws RemoteException
+     * @throws FileNotFoundException If config.properties file not found in root directory
      */
     public ServerImpl() throws RemoteException{
 
@@ -50,8 +51,6 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
                 throw new FileNotFoundException("'" + propFileName + "' not found in classpath");
             }
 
-            cookie = prop.getProperty("cookie");
-            cookiename = prop.getProperty("cookiename");
             apikey = prop.getProperty("apikey");
             apiuser = prop.getProperty("apiuser");
             apipass = prop.getProperty("apipass");
@@ -66,10 +65,10 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
             packageJSON = ckanRequest("ckan.lancaster.ac.uk/api/3/action/package_show?id=planonmetadata");
             JSONArray packageList = packageJSON.getJSONObject("result").getJSONArray("resources"); // Array of resource names available in CKAN
 
-            String lookingFor = "Planon metadata - Meters Sensors";
-            for (int i = 0; i < packageList.length(); i++) {
-                if (packageList.getJSONObject(i).getString("name").equals(lookingFor)){
-
+            String lookingFor = "Planon metadata - Meters Sensors"; // search for meter / sensor metadata
+            for (int i = 0; i < packageList.length(); i++) { // for every package name in CKAN
+                if (packageList.getJSONObject(i).getString("name").equals(lookingFor)){ // if package is meter / sensor data
+                    // Get package ID number and use this in another CKAN request for meter / sensor metadata
                     String id = packageList.getJSONObject(i).getString("id");
                     meterThread = new Thread() {
                         public void run() {
@@ -88,7 +87,6 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
             lookingFor = "Planon metadata - Loggers Controllers"; // Search for logger / controller metadata
             for (int i = 0; i < packageList.length(); i++) { // for every package name in CKAN
                 if (packageList.getJSONObject(i).getString("name").equals(lookingFor)){ // if package is loggers / controllers
-
                     // Get package ID number and use this in another CKAN request for logger / controller metadata
                     String id = packageList.getJSONObject(i).getString("id");
                     loggerThread = new Thread() {
@@ -190,7 +188,26 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
         return ret;
     }
 
-    // Simple file to text for testing ckan responses
+    /**
+     * A list of building names available in the CKAN metadata
+     * @return Array of building names
+     * @throws RemoteException
+     */
+    public ArrayList<String> getBuildingList() throws RemoteException{
+        ArrayList<String> outputList = new ArrayList<String>();
+
+        JSONArray loggerList = loggerJSON.getJSONObject("result").getJSONArray("records"); //list of loggers / controllers
+        for (int i = 0; i < loggerList.length(); i++) { // loop through every logger
+            String name = loggerList.getJSONObject(i).getString("Building Name");
+            if (!outputList.contains(name)){
+                outputList.add(name); // add building name of logger to return list, if it hasnt been seen already
+            }
+        }
+
+        return outputList;
+    }
+
+    // Simple file to text method for testing ckan responses
     // https://stackoverflow.com/questions/326390/how-do-i-create-a-java-string-from-the-contents-of-a-file
     static String readFile(String path, Charset encoding)
             throws IOException
