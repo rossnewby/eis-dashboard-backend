@@ -1,11 +1,5 @@
-import javax.net.ssl.HttpsURLConnection;
-import java.io.*;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.rmi.Naming;
 import java.rmi.registry.LocateRegistry;
-import java.util.Date;
-import java.util.Properties;
 
 /**
  * @Author Ross Newby
@@ -34,7 +28,7 @@ public class Server {
         System.out.println("Java Version: " + System.getProperty("java.version"));
         System.out.println("Running...");
 
-        new Server();
+        Server server = new Server();
     }
 }
 

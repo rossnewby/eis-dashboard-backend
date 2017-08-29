@@ -19,5 +19,5 @@ public interface ServerInterface extends Remote{
      * */
     public JSONObject ckanRequest(String url) throws RemoteException;
 
-    public ArrayList<String> getBuildingList()throws RemoteException;
+    public String[] getBuildingList()throws RemoteException;
 }
