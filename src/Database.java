@@ -1,16 +1,16 @@
-/**
- * @Author Ross Newby
- */
 import java.io.*;
 import java.sql.*;
 import java.util.Properties;
 
+/**
+ * @Author Ross Newby
+ */
 public class Database {
 
     private static final String URL = "jdbc:mysql://localhost:3306/eisquality";
     private static String USER = "not set";
     private static String PASSWORD = "not set";
-    static private final int STR_SIZE = 25;
+    static private final int PAD_SIZE = 25;
 
     private Connection con;
     private Statement st;
@@ -117,13 +117,17 @@ public class Database {
             String query = ("SELECT * FROM "+tableName);
             rs = st.executeQuery(query);
 
-            System.out.println("Records from DB:");
-            System.out.println(pad("Error") + "| Repetitions");
-            while (rs.next()){
+            System.out.println("Table (" + tableName + "):"); // title
+            System.out.println("+ " + pad("") + "+ " + pad("") + "+"); // top divider
+            System.out.println("| " + pad("Error") + "| " + pad("Repetitions") + "|"); // headers
+            System.out.println("+ " + pad("") + "+ " + pad("") + "+"); // top divider
+
+            while (rs.next()){ // print every record
                 String err = rs.getString("error_type");
                 String rep = Integer.toString(rs.getInt("repetitions")); //rounds to int
-                System.out.println(pad(err) + "| " + pad(rep));
+                System.out.println("| " + pad(err) + "| " + pad(rep) + "|");
             }
+            System.out.println("+ " + pad("") + "+ " + pad("") + "+"); // bottom divider
         }
         catch (Exception e){
             e.printStackTrace();
@@ -138,17 +142,19 @@ public class Database {
     // "s_name                    " (the six characters followed by 18 spaces).
     private String pad(String in) {
         byte[] org_bytes = in.getBytes();
-        byte[] new_bytes = new byte[STR_SIZE];
+        byte[] new_bytes = new byte[PAD_SIZE];
         int upb = in.length();
 
-        if (upb > STR_SIZE)
-            upb = STR_SIZE;
+        if (upb > PAD_SIZE)
+            upb = PAD_SIZE;
 
-        for (int i = 0; i < upb; i++)
+        for (int i = 0; i < upb; i++) {
             new_bytes[i] = org_bytes[i];
+        }
 
-        for (int i = upb; i < STR_SIZE; i++)
-            new_bytes[i] = ' ';
+        for (int i = upb; i < PAD_SIZE; i++) {
+            new_bytes[i] = (byte) ((in.equals("")) ? '-' : ' ');
+        }
 
         return new String(new_bytes);
     }
