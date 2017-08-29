@@ -1,5 +1,6 @@
 import java.io.*;
 import java.sql.*;
+import java.util.Map;
 import java.util.Properties;
 
 /**
@@ -60,6 +61,36 @@ public class Database {
 
         try {
             String query = ("INSERT INTO "+ tableName + " VALUES (default, " + values + ")");
+            //System.out.println("Executing >> " + query); //debug
+            st.executeUpdate(query);
+        }
+        catch (Exception e){
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     *
+     * @param tableName
+     * @param values
+     */
+    public void addRecord(String tableName, Map<String, String> values){
+        try {
+            StringBuilder columnNames = new StringBuilder();
+            StringBuilder valueNames = new StringBuilder();
+
+            columnNames.append(" (");
+            valueNames.append(" (");
+            for (String key: values.keySet()){
+                columnNames.append(key + ", ");
+                valueNames.append(values.get(key) + ", ");
+            }
+            columnNames.setLength(columnNames.length()-2);
+            columnNames.append(") ");
+            valueNames.setLength(valueNames.length()-2);
+            valueNames.append(") ");
+
+            String query = ("INSERT INTO "+ tableName + columnNames + "VALUES" + valueNames);
             //System.out.println("Executing >> " + query); //debug
             st.executeUpdate(query);
         }

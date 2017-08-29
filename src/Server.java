@@ -1,5 +1,7 @@
 import java.rmi.Naming;
 import java.rmi.registry.LocateRegistry;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * @Author Ross Newby
@@ -28,7 +30,17 @@ public class Server {
         System.out.println("Java Version: " + System.getProperty("java.version"));
         System.out.println("Running...");
 
-        Server server = new Server();
+        Database database = new Database();
+        database.printTable("errors");
+
+        Map<String, String> data = new HashMap<String, String>();
+        data.put("error_type", "\"testinline\"");
+        data.put("repetitions", "100");
+        database.addRecord("errors", data);
+
+        database.printTable("errors");
+
+        //Server server = new Server();
     }
 }
 
