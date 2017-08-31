@@ -254,7 +254,6 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
     }
 
     public void processFile(){
-
         try {
             CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/package_show?id=bms");
             JSONObject bmsJSON = ckanReq.requestJSON();
