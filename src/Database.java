@@ -12,7 +12,7 @@ public class Database {
     private static final String URL = "jdbc:mysql://localhost:3306/eisquality";
     private static String USER = "not set";
     private static String PASSWORD = "not set";
-    static private final int PAD_SIZE = 25;
+    static private final int PAD_SIZE = 30;
 
     private Connection con;
     private Statement st;
@@ -99,8 +99,6 @@ public class Database {
             e.printStackTrace();
         }
     }
-
-    // https://coderanch.com/t/306966/databases/Execute-sql-file-java by Tom Enders
 
     /**
      * Executes a set of SQL statements from file. Adaptation from code by Tom Enders:
@@ -229,12 +227,13 @@ public class Database {
         }
     }
 
-    // this method takes a String, converts it into an array of bytes;
-    // copies those bytes into a bigger byte array (STR_SIZE worth), and
-    // pads any remaining bytes with spaces. Finally, it converts the bigger
-    // byte array back into a String, which it then returns.
-    // e.g. if the String was "s_name", the new string returned is
-    // "s_name                    " (the six characters followed by 18 spaces).
+    /**
+     * This method takes a String, converts it into an array of bytes; copies those bytes
+     * into a bigger byte array (STR_SIZE worth), and pads any remaining bytes with spaces.
+     * Finally, it converts the bigger byte array back into a String.
+     * @param in String to pad
+     * @return Input string extended or cropped to the length of STR_SIZE
+     */
     private String pad(String in) {
         byte[] org_bytes = in.getBytes();
         byte[] new_bytes = new byte[PAD_SIZE];

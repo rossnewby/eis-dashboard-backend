@@ -1,5 +1,6 @@
 import com.sun.org.apache.xerces.internal.impl.dv.util.Base64;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import javax.net.ssl.HttpsURLConnection;
@@ -70,10 +71,10 @@ public class CKANRequest {
      * @return Returns the CKAN response as a JSONObject
      * @throws RemoteException Problem with remote procedure call
      */
-    public JSONObject ckanRequest() throws RemoteException{
+    public JSONObject requestJSON() throws RemoteException{
 
         JSONObject ret = null;
-        String response = ckanRequestString(url.toString());
+        String response = requestString(url.toString());
 
         /*parse return string to a JSON object*/
         try {
@@ -82,7 +83,7 @@ public class CKANRequest {
         }
         catch (Exception e){
             System.out.println("CKAN Request Error:");
-            e.printStackTrace();
+            //e.printStackTrace();
         }
 
         return ret;
@@ -100,7 +101,7 @@ public class CKANRequest {
         int counter = 0;
 
         String newURLString = url + "&offset=" + counter + "&limit=" + CHUNK_SIZE;
-        String current = ckanRequestString(newURLString);
+        String current = requestString(newURLString);
 
         ret = new JSONObject(current); // parse return string to a JSON object
         int total = ret.getJSONObject("result").getInt("total");
@@ -108,7 +109,7 @@ public class CKANRequest {
 
         do {
             newURLString = url + "&offset=" + counter + "&limit=" + CHUNK_SIZE;
-            current = ckanRequestString(newURLString);
+            current = requestString(newURLString);
 
             JSONObject currentJSON = new JSONObject(current);
             JSONArray resultList = currentJSON.getJSONObject("result").getJSONArray("records");
@@ -127,7 +128,7 @@ public class CKANRequest {
      * @return Returns the CKAN response as String
      * @throws RemoteException Problem with remote procedure call
      */
-    public String ckanRequestString(String url) throws RemoteException {
+    public String requestString(String url) throws RemoteException {
 
         StringBuffer response = null;
         System.out.println("CKAN Requesting: " + url.toString()); // debug
@@ -154,13 +155,15 @@ public class CKANRequest {
             con.disconnect();
         }
         catch (Exception e) {
-            System.out.println("CKAN Connection Error:");
-            e.printStackTrace();
+            System.out.print("CKAN Connection Error: ");
+            if (response == null){ // no response from CKAN with specified URL
+                //throw new RemoteException("CKAN Response 'null'");
+                System.out.println("CKAN Response 'null'");
+                return "";
+            }
+            //e.printStackTrace();
         }
 
-        if (response == null){ // no response from CKAN with specified URL
-            throw new RemoteException("CKAN Response 'null'");
-        }
         return response.toString(); // returns StringBuffer as String
     }
 }

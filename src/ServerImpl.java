@@ -9,6 +9,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Contains the methods for quality assurance processing
@@ -21,9 +24,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
     private JSONObject meterJSON = null;
     private JSONObject loggerJSON = null;
     private Thread meterThread, loggerThread; // threads for initial metadata reading
-    private JSONObject readJSON = null; // JSON for current CKAN request
-
-    String[] loggerCodes, meterCodes; // move this to testMetadata in future******
+    private JSONObject readingJSON = null; // JSON for current CKAN request
 
     private static final String METER_SENSOR_METADATA_NAME = "Planon metadata - Meters Sensors"; // names of metadata files in CKAN
     private static final String LOGGER_CONTROLLER_METADATA_NAME = "Planon metadata - Loggers Controllers";
@@ -47,7 +48,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         /*Get CKAN metadata*/
         try {
             CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/package_show?id=planonmetadata");
-            packageJSON = ckanReq.ckanRequest();
+            packageJSON = ckanReq.requestJSON();
             JSONArray packageList = packageJSON.getJSONObject("result").getJSONArray("resources"); // Array of resource names available in CKAN
 
             String lookingFor = METER_SENSOR_METADATA_NAME; // search for meter / sensor metadata
@@ -59,7 +60,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                         public void run() {
                             try {
                                 CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
-                                meterJSON = ckanReq.ckanRequest();
+                                meterJSON = ckanReq.requestJSON();
                                 //meterCodes = getSpecified(meterJSON, "Logger Asset Code");
                             }
                             catch (Exception e){
@@ -79,7 +80,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                         public void run() {
                             try {
                                 CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
-                                loggerJSON = ckanReq.ckanRequest();
+                                loggerJSON = ckanReq.requestJSON();
                                 //loggerCodes = getSpecified(loggerJSON, "Logger Serial Number");
                             }
                             catch (Exception e){
@@ -138,52 +139,37 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                                     "  2) Test Metadata Quality\n" +
                                     "  3) Test BMS Data Quality* (print loggerCodes)\n" +
                                     "  4) Test EMS Data Quality* (print meterCodes)\n" +
-                                    "  5) Test Specific Meter* (print buildings)\n" +
+                                    "  5) Test Specific Meter\n" +
                                     "  9) Disable Actions");
-
                 input = scanner.nextLine();
 
-                // Print Database
-                if ("1".equals(input)){
+                if ("1".equals(input)){ // Print Database
                     database.printDatabase();
                 }
-                // Test Metadata for errors
-                else if ("2".equals(input)){
+                else if ("2".equals(input)){ // Test Metadata for errors
                     testMetadata();
                 }
-                // <>
                 else if ("3".equals(input)){
-                    for (int i = 0; i < loggerCodes.length; i++)
-                        System.out.println(loggerCodes[i]);
+//                    for (int i = 0; i < loggerCodes.length; i++)
+//                        System.out.println(loggerCodes[i]);
                 }
-                // Read CKAN Files
                 else if ("4".equals(input)){
                     // TESTING ONLY
                     // processFile();
-                    for (int i = 0; i < meterCodes.length; i++)
-                        System.out.println(meterCodes[i]);
+//                    for (int i = 0; i < meterCodes.length; i++)
+//                        System.out.println(meterCodes[i]);
                 }
-                // <>
                 else if ("5".equals(input)){
-                    // TESTING ONLY
-                    //processMeter("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}", "D1");
-                    try {
-                        String[] buildings = getBuildingList();
-                        for (int i = 0; i < buildings.length; i++)
-                            System.out.println(buildings[i]);
-                    }catch (Exception e){
-                        //..
-                    }
+                    //processFile();
+                    processMeter("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}", "D1"); //testing only
                 }
                 else if ("9".equals(input)){
                     System.out.println("Actions no longer available");
                 }
-                // Exit
-                else if ("e".equals(input)) {
+                else if ("e".equals(input)) { // Close application
                     exit();
                 }
-                // Invalid Input
-                else {
+                else { // Invalid Input
                     System.out.println("Invalid Option.");
                 }
             }
@@ -192,6 +178,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
 
     public void testMetadata() {
         System.out.println("Processing Metadata..."); //debug
+        String[] loggerCodes, meterCodes;
         String[] loggerDescs, meterDescs;
 
         /*All logger codes in logger metadata*/
@@ -199,36 +186,28 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         ArrayList<String> loggerDescArray = new ArrayList<>();
         JSONArray loggerList = loggerJSON.getJSONObject("result").getJSONArray("records"); //list of loggers
         for (int i = 0; i < loggerList.length(); i++) { // every logger
-            String name = loggerList.getJSONObject(i).getString("Logger Serial Number");
+            String name = loggerList.getJSONObject(i).getString("Logger Serial Number"); //store logger code
             loggerCodeArray.add(name);
-            String desc = loggerList.getJSONObject(i).getString("Description");
+            String desc = loggerList.getJSONObject(i).getString("Description"); //store description
             loggerDescArray.add(desc);
         }
-        loggerCodes = new String[loggerCodeArray.size()];
-        loggerCodeArray.toArray(loggerCodes);
-        loggerDescs = new String[loggerDescArray.size()];
-        loggerDescArray.toArray(loggerDescs);
+        loggerCodes = convertToArray(loggerCodeArray); // convert to regular String arrays
+        loggerDescs = convertToArray(loggerDescArray);
 
         /*All logger codes in meter metadata*/
         ArrayList<String> meterArray = new ArrayList<>();
         ArrayList<String> meterDescArray = new ArrayList<>();
         JSONArray meterList = meterJSON.getJSONObject("result").getJSONArray("records"); //list of meters
         for (int i = 0; i < meterList.length(); i++) { // every meter
-            String name = meterList.getJSONObject(i).getString("Logger Asset Code");
+            String name = meterList.getJSONObject(i).getString("Logger Asset Code"); // store logger code
             meterArray.add(name);
-            String desc = meterList.getJSONObject(i).getString("Description");
+            String desc = meterList.getJSONObject(i).getString("Description"); //store description
             meterDescArray.add(desc);
         }
-        meterCodes = new String[meterArray.size()];
-        meterArray.toArray(meterCodes);
-        meterDescs = new String[meterDescArray.size()];
-        loggerDescArray.toArray(meterDescs);
+        meterCodes = convertToArray(meterArray); // convert to regular String arrays
+        meterDescs = convertToArray(meterDescArray);
 
-//        loggerCodes = getSpecified(loggerJSON, "Logger Serial Number");
-//        meterCodes = getSpecified(meterJSON, "Logger Asset Code");
-
-        System.out.println("Count - Loggers Codes: " + loggerCodes.length + ", Meter Codes: " + meterCodes.length); //debug
-
+        System.out.println("Loggers Codes: " + loggerCodes.length + ", Meter Codes: " + meterCodes.length); //debug
         int errors = 0;
 
         /*Test for loggers without meters*/
@@ -246,7 +225,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                 vals.put("error_type", "\"logger no meter\"");
                 vals.put("asset_code", "\""+loggerCodes[i]+"\"");
                 vals.put("description", "\""+loggerDescs[i]+"\"");
-                database.addRecord("metadataerrors", vals);
+                database.addRecord("metadataerrors", vals); // Add error to database
             }
         }
         System.out.println("Loggers without Meters: " + errors);
@@ -266,12 +245,11 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                 Map<String, String> vals = new HashMap<>();
                 vals.put("error_type", "\"meter no loggers\"");
                 vals.put("asset_code", "\""+meterCodes[i]+"\"");
-                vals.put("description", "\""+meterDescs[i]+"\"");
-                database.addRecord("metadataerrors", vals);
+                vals.put("description", "\""+meterDescs[i]+"\""); //TODO Improve descriptions (account for blanks and expand desc)
+                database.addRecord("metadataerrors", vals); // Add error to database
             }
         }
         System.out.println("Meters without Loggers: " + errors);
-
         System.out.println("Metadata Processing Successful");
     }
 
@@ -279,7 +257,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
 
         try {
             CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/package_show?id=bms");
-            JSONObject bmsJSON = ckanReq.ckanRequest();
+            JSONObject bmsJSON = ckanReq.requestJSON();
             JSONArray bmsList = bmsJSON.getJSONObject("result").getJSONArray("resources"); // Array of bms fines in CKAN
 
             String lookingFor = "bms-jun-2017";
@@ -292,12 +270,12 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                         public void run() {
                             try {
                                 //CKANRequest ckanReq = new CKANRequest("https://ckan.lancaster.ac.uk/api/action/datastore_search?resource_id="+id+"&offset="+0+"&limit="+50000);
-                                //readJSON = ckanRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
+                                //readJSON = requestJSON("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
                                 //readJSON = ckanReq.ckanRequestLong("https://ckan.lancaster.ac.uk/api/action/datastore_search?resource_id="+id);
                                 CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"%20WHERE%20device_id='{05937EE0-58E6-42F3-B6BD-A180D9634B6C}'%20AND%20module_key='D1'");
-                                readJSON = ckanReq.ckanRequest();
+                                readingJSON = ckanReq.requestJSON();
                                 System.out.println("Back to Server Class");
-                                writeFile(readJSON, lookingFor);
+                                writeFile(readingJSON, lookingFor);
                             }
                             catch (Exception e){
                                 e.printStackTrace();
@@ -313,23 +291,69 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         }
     }
 
+    /**
+     * Convert all data for a single meter / sensor to a single JSON object.
+     * Both the logger code and module key make a unique identifier for the Meter
+     * @param loggerCode Meters / sensor's logger code
+     * @param moduleKey Meter / sensor's module key
+     */
     public void processMeter(String loggerCode, String moduleKey){
-
-        ArrayList<String> outputList = new ArrayList<String>();
-
-        JSONArray loggerList = meterJSON.getJSONObject("result").getJSONArray("records");
-        for (int i = 0; i < loggerList.length(); i++) { // loop through every meter
-            String code = loggerList.getJSONObject(i).getString("Logger Asset Code");
-            String channel = loggerList.getJSONObject(i).getString("Logger Channel");
-            if (loggerCode.equals(code) && moduleKey.equals(channel)){
-                System.out.println(code + " - " + channel);
+        try {
+            /*List of BMS files in CKAN*/
+            CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/package_show?id=bms");
+            JSONObject bmsJSON = ckanReq.requestJSON();
+            JSONArray bmsList = bmsJSON.getJSONObject("result").getJSONArray("resources"); // Array of bms files in CKAN (JSON Objects)
+            ArrayList<String> fileList = new ArrayList<>(); // list of BMS filenames in CKAN
+            for (int i = 0; i < bmsList.length(); i++){ // each BMS file
+                String fileName = bmsList.getJSONObject(i).getString("name"); // next BMS filename
+                if (!fileName.equals("bmsdevicemeta")) {
+                    if (!fileName.equals("bmsmodulemeta")) {// don't include bms metadata in list
+                        fileList.add(bmsList.getJSONObject(i).getString("id"));
+                        System.out.println("Added: " + fileName + ", " + bmsList.getJSONObject(i).getString("id")); //debug
+                    }
+                }
             }
+
+            /*Read JSON object for first file and remove reference from list*/
+            ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" +
+                                        fileList.get(0) + "\"%20WHERE%20device_id='"+loggerCode+"'%20AND%20module_key='"+moduleKey+"'");
+            readingJSON = ckanReq.requestJSON();
+            fileList.remove(0);
+
+            String[] bmsFileIDs = new String[fileList.size()]; // convert list of filenames to regular String[] array
+            fileList.toArray(bmsFileIDs);
+
+            /*Get data for meter from every bms file*/
+            ExecutorService es = Executors.newCachedThreadPool();
+            for (String id: bmsFileIDs) { // for every bms file
+                es.execute(new Thread() { // execute code on new thread
+                    public void run() {
+                        try {
+                            CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\""
+                                                                    + id + "\"%20WHERE%20device_id='"+loggerCode+"'%20AND%20module_key='"+moduleKey+"'");
+                            JSONObject newJSON = ckanReq.requestJSON(); // JSON object of meter data from CKAN
+                            JSONArray toAccumulate = newJSON.getJSONObject("result").getJSONArray("records");
+                            readingJSON.accumulate("records", toAccumulate); // append meter data to current JSONObject
+                        }
+                        catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
+                });
+            }
+
+            /*Wait for all thread to end*/
+            System.out.println("Waiting on Threads for " + loggerCode + "...");
+            es.shutdown();
+            es.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+            System.out.println("All Threads Complete for " + loggerCode + "-" + moduleKey);
+
+            //For now; output result to file for debug
+            writeFile(readingJSON, loggerCode+"-"+moduleKey);
         }
-
-        /*Convert ArrayList to String array*/
-        String[] outputArray = new String[outputList.size()];
-        outputList.toArray(outputArray);
-
+        catch (Exception e){
+            e.printStackTrace();
+        }
     }
 
     /**
@@ -377,14 +401,35 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         return outputArray;
     }
 
-    // Simple file to text method for testing ckan responses
-    // https://stackoverflow.com/questions/326390/how-do-i-create-a-java-string-from-the-contents-of-a-file
-    static String readFile(String path, Charset encoding) throws IOException {
+    /**
+     * Converts an ArrayList<String> to regular String[] array
+     * @param in ArrayList to convert
+     * @return Regular String[] array of input
+     */
+    private String[] convertToArray(ArrayList<String> in){
+        String[] ret = new String[in.size()]; // convert list of filenames to regular String[] array
+        in.toArray(ret);
+        return ret;
+    }
+
+    /**
+     * Converts text file to String; used for testing. Code from:
+     * https://stackoverflow.com/questions/326390/how-do-i-create-a-java-string-from-the-contents-of-a-file
+     * @param path Path to file to be converted
+     * @param encoding Charset encoding typically StandardCharsets.UTF_8
+     * @return String of converted text
+     */
+    private static String readFile(String path, Charset encoding) throws IOException {
         byte[] encoded = Files.readAllBytes(Paths.get(path));
         return new String(encoded, encoding);
     }
 
-    void writeFile(JSONObject obj, String name) throws IOException{
+    /**
+     * Converts a JSONObject to String and writes it to a text file
+     * @param obj JSONObject to write to file
+     * @param name Name of text file (excluding '.txt'
+     */
+    private void writeFile(JSONObject obj, String name) throws IOException{
         String fileName = name+".txt";
         try (FileWriter file = new FileWriter(fileName)) {
             file.write(obj.toString());

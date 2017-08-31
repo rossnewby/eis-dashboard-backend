@@ -13,7 +13,7 @@ public interface ServerInterface extends Remote{
      * @param url Desired ckan url, excluding or including 'https://'
      * @return This returns the CKAN response as a JSONObject
      * */
-    //public JSONObject ckanRequest(String url) throws RemoteException;
+    //public JSONObject requestJSON(String url) throws RemoteException;
 
     public String[] getBuildingList()throws RemoteException;
 }
