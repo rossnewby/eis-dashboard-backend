@@ -208,9 +208,9 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         meterDescs = convertToArray(meterDescArray);
 
         System.out.println("Loggers Codes: " + loggerCodes.length + ", Meter Codes: " + meterCodes.length); //debug
-        int errors = 0;
 
         /*Test for loggers without meters*/
+        int errors = 0;
         for (int i = 0; i < loggerCodes.length; i++){ // for every logger
             boolean found = false;
             for (int j = 0; j < meterCodes.length; j++){ // look at every meter
@@ -230,8 +230,8 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         }
         System.out.println("Loggers without Meters: " + errors);
 
-        errors = 0;
         /*Test for meters without loggers*/
+        errors = 0;
         for (int i = 0; i < meterCodes.length; i++){ // for every meter
             boolean found = false;
             for (int j = 0; j < loggerCodes.length; j++){ // look at every logger
