@@ -1,5 +1,6 @@
 import java.io.*;
 import java.sql.*;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Properties;
 
@@ -100,6 +101,13 @@ public class Database {
     }
 
     // https://coderanch.com/t/306966/databases/Execute-sql-file-java by Tom Enders
+
+    /**
+     * Executes a set of SQL statements from file. Adaptation from code by Tom Enders:
+     * https://coderanch.com/t/306966/databases/Execute-sql-file-java
+     * @param path File path to SQL scripts e.g <path to folder>/scripts.sql
+     * @throws SQLException
+     */
     public void executeSQLScript(String path) throws SQLException {
 
         try {
@@ -139,29 +147,85 @@ public class Database {
     }
 
     /**
-     * <></>
-     * @param tableName
+     * Prints all the tables in the database; used for debugging and referencing
      */
-    public void printTable(String tableName){
-
+    public void printDatabase() {
+        //find out what all the table names in the database are
+        ArrayList<String> tables = new ArrayList<String>();
         try {
-            String query = ("SELECT * FROM "+tableName);
-            rs = st.executeQuery(query);
+            DatabaseMetaData md = con.getMetaData();
 
-            System.out.println("Table (" + tableName + "):"); // title
-            System.out.println("+ " + pad("") + "+ " + pad("") + "+"); // top divider
-            System.out.println("| " + pad("Error") + "| " + pad("Repetitions") + "|"); // headers
-            System.out.println("+ " + pad("") + "+ " + pad("") + "+"); // top divider
+            String[] types = {"TABLE"};
+            ResultSet rs = md.getTables(null, null, null, types);
 
-            while (rs.next()){ // print every record
-                String err = rs.getString("error_type");
-                String rep = Integer.toString(rs.getInt("repetitions")); //rounds to int
-                System.out.println("| " + pad(err) + "| " + pad(rep) + "|");
+            while (rs.next()) { //read in all tables in the database
+                tables.add(rs.getString(3));
             }
-            System.out.println("+ " + pad("") + "+ " + pad("") + "+"); // bottom divider
-        }
-        catch (Exception e){
+
+            rs.close();
+        } catch (Exception e) {
             e.printStackTrace();
+        }
+
+        for (int i = 0; i < tables.size(); i++) {
+            ArrayList<String> cols = new ArrayList<>();
+
+            try {
+                Statement sqlStmt = con.createStatement();
+
+                String sqlCmdStr = ("select * from " + tables.get(i));
+                ResultSet rSet = sqlStmt.executeQuery(sqlCmdStr);
+                ResultSetMetaData mData = rSet.getMetaData();
+
+                System.out.println("Table: " + mData.getTableName(2));
+
+                int rowCount = mData.getColumnCount();
+
+                //read in all the column names
+                for (int j = 1; j < rowCount + 1; j++) {
+                    cols.add(mData.getColumnName(j));
+                }
+
+                //print topmost border
+                for (int j = 0; j < cols.size(); j++) {
+                    System.out.print(" + " +pad(""));
+                }
+                System.out.println(" + ");
+
+                //print the names of the columns in the table
+                for (int j = 0; j < cols.size(); j++) {
+                    System.out.print(" | " + pad(cols.get(j)));
+                }
+                System.out.println(" | ");
+
+                //print middle border
+                for (int j = 0; j < cols.size(); j++) {
+                    System.out.print(" + " + pad(""));
+                }
+                System.out.println(" + ");
+
+                //read and print every row in the table
+                while (rSet.next()) {
+                    for (int j = 0; j < cols.size(); j++) {
+                        String item = rSet.getString(cols.get(j));
+                        System.out.print(" | " + pad(item));
+                    }
+                    System.out.println(" | ");
+                }
+
+                //print bottom border
+                for (int j = 0; j < cols.size(); j++) {
+                    System.out.print(pad("") + " + ");
+                }
+                System.out.println("");
+
+                rSet.close();
+                sqlStmt.close();
+
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+            System.out.println("");
         }
     }
 

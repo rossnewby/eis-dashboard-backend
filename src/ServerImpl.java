@@ -6,6 +6,8 @@ import java.nio.file.Paths;
 import java.rmi.*;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Scanner;
 
 /**
@@ -13,21 +15,22 @@ import java.util.Scanner;
  *
  * @Author Ross Newby
  */
-public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
+public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
 
     private JSONObject packageJSON = null; // JSON objects for all metadata
     private JSONObject meterJSON = null;
     private JSONObject loggerJSON = null;
     private Thread meterThread, loggerThread; // threads for initial metadata reading
-    private JSONObject readJSON;
+    private JSONObject readJSON = null; // JSON for current CKAN request
+
+    String[] loggerCodes, meterCodes; // move this to testMetadata in future******
+
+    private static final String METER_SENSOR_METADATA_NAME = "Planon metadata - Meters Sensors"; // names of metadata files in CKAN
+    private static final String LOGGER_CONTROLLER_METADATA_NAME = "Planon metadata - Loggers Controllers";
+    private static final String BMS_CLASSIFICATION_GROUP = "Energy meter"; // identifier for EMS records
+    private static final String EMS_CLASSIFICATION_GROUP = "Energy sensor"; // identifier for BMS records
 
     private Database database = null;
-    private static final String METER_SENSOR_METADATA_NAME = "Planon metadata - Meters Sensors";
-    private static final String LOGGER_CONTROLLER_METADATA_NAME = "Planon metadata - Loggers Controllers";
-    private static final String BMS_CLASSIFICATION_GROUP = "Energy meter";
-    private static final String EMS_CLASSIFICATION_GROUP = "Energy sensor";
-
-
     private Scanner scanner = new Scanner(System.in);
     private String input = null;
 
@@ -57,6 +60,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
                             try {
                                 CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
                                 meterJSON = ckanReq.ckanRequest();
+                                //meterCodes = getSpecified(meterJSON, "Logger Asset Code");
                             }
                             catch (Exception e){
                                 e.printStackTrace();
@@ -76,6 +80,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
                             try {
                                 CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
                                 loggerJSON = ckanReq.ckanRequest();
+                                //loggerCodes = getSpecified(loggerJSON, "Logger Serial Number");
                             }
                             catch (Exception e){
                                 e.printStackTrace();
@@ -107,7 +112,13 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
 
         /*Connect to Database*/
         database = new Database();
-        database.printTable("errors"); //debug
+        try {
+            database.executeSQLScript("C:/Users/Ross/Documents/University/Intern - EIS Dashboard/SQL Scripts/eisqualityinit.sql");
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+        }
+        database.printDatabase(); //debug
 
         System.out.println("Server Initialised"); // confirmation message
         serverMenu();
@@ -118,31 +129,51 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
      */
     private void serverMenu(){
 
-        while (!"4".equals(input)) {
+        while (!"9".equals(input)) {
             INVALID:
             {
                 System.out.println("-- Actions --");
-                System.out.println("Select an option:");
-                System.out.println("  1) Print Database");
-                System.out.println("  2) Read & Process BMS");
-                System.out.println("  3) Process Meter");
-                System.out.println("  9) Disable Actions");
+                System.out.println("Select an Action:\n" +
+                                    "  1) Print Database\n" +
+                                    "  2) Test Metadata Quality\n" +
+                                    "  3) Test BMS Data Quality* (print loggerCodes)\n" +
+                                    "  4) Test EMS Data Quality* (print meterCodes)\n" +
+                                    "  5) Test Specific Meter* (print buildings)\n" +
+                                    "  9) Disable Actions");
 
                 input = scanner.nextLine();
 
                 // Print Database
                 if ("1".equals(input)){
-                    database.printTable("errors");
+                    database.printDatabase();
                 }
-                // Read CKAN Files
+                // Test Metadata for errors
                 else if ("2".equals(input)){
-                    // TESTING ONLY
-                    processFile();
+                    testMetadata();
                 }
                 // <>
                 else if ("3".equals(input)){
+                    for (int i = 0; i < loggerCodes.length; i++)
+                        System.out.println(loggerCodes[i]);
+                }
+                // Read CKAN Files
+                else if ("4".equals(input)){
                     // TESTING ONLY
-                    processMeter("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}", "D1");
+                    // processFile();
+                    for (int i = 0; i < meterCodes.length; i++)
+                        System.out.println(meterCodes[i]);
+                }
+                // <>
+                else if ("5".equals(input)){
+                    // TESTING ONLY
+                    //processMeter("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}", "D1");
+                    try {
+                        String[] buildings = getBuildingList();
+                        for (int i = 0; i < buildings.length; i++)
+                            System.out.println(buildings[i]);
+                    }catch (Exception e){
+                        //..
+                    }
                 }
                 else if ("9".equals(input)){
                     System.out.println("Actions no longer available");
@@ -157,6 +188,95 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
                 }
             }
         }
+    }
+
+    public void testMetadata() {
+        System.out.println("Processing Metadata..."); //debug
+        String[] loggerDescs, meterDescs;
+
+        /*All logger codes in logger metadata*/
+        ArrayList<String> loggerCodeArray = new ArrayList<>();
+        ArrayList<String> loggerDescArray = new ArrayList<>();
+        JSONArray loggerList = loggerJSON.getJSONObject("result").getJSONArray("records"); //list of loggers
+        for (int i = 0; i < loggerList.length(); i++) { // every logger
+            String name = loggerList.getJSONObject(i).getString("Logger Serial Number");
+            loggerCodeArray.add(name);
+            String desc = loggerList.getJSONObject(i).getString("Description");
+            loggerDescArray.add(desc);
+        }
+        loggerCodes = new String[loggerCodeArray.size()];
+        loggerCodeArray.toArray(loggerCodes);
+        loggerDescs = new String[loggerDescArray.size()];
+        loggerDescArray.toArray(loggerDescs);
+
+        /*All logger codes in meter metadata*/
+        ArrayList<String> meterArray = new ArrayList<>();
+        ArrayList<String> meterDescArray = new ArrayList<>();
+        JSONArray meterList = meterJSON.getJSONObject("result").getJSONArray("records"); //list of meters
+        for (int i = 0; i < meterList.length(); i++) { // every meter
+            String name = meterList.getJSONObject(i).getString("Logger Asset Code");
+            meterArray.add(name);
+            String desc = meterList.getJSONObject(i).getString("Description");
+            meterDescArray.add(desc);
+        }
+        meterCodes = new String[meterArray.size()];
+        meterArray.toArray(meterCodes);
+        meterDescs = new String[meterDescArray.size()];
+        loggerDescArray.toArray(meterDescs);
+
+//        loggerCodes = getSpecified(loggerJSON, "Logger Serial Number");
+//        meterCodes = getSpecified(meterJSON, "Logger Asset Code");
+
+        System.out.println("Count - Loggers Codes: " + loggerCodes.length + ", Meter Codes: " + meterCodes.length); //debug
+
+        int errors = 0;
+
+        /*Test for loggers without meters*/
+        for (int i = 0; i < loggerCodes.length; i++){ // for every logger
+            boolean found = false;
+            for (int j = 0; j < meterCodes.length; j++){ // look at every meter
+                if (loggerCodes[i].equals(meterCodes[j])) {
+                    found = true;
+                    break; // break if meter matching logger is found
+                }
+            }
+            if (!found){
+                errors++;
+                //System.out.println("Error: " + loggerCodes[i] + " - '" + loggerDescs[i] + "' no Meters");
+
+                Map<String, String> vals = new HashMap<>();
+                vals.put("error_type", "\"logger no meter\"");
+                vals.put("asset_code", "\""+loggerCodes[i]+"\"");
+                vals.put("description", "\""+loggerDescs[i]+"\"");
+                database.addRecord("metadataerrors", vals);
+            }
+        }
+        System.out.println("Loggers without Meters: " + errors);
+
+        errors = 0;
+        /*Test for meters without loggers*/
+        for (int i = 0; i < meterCodes.length; i++){ // for every meter
+            boolean found = false;
+            for (int j = 0; j < loggerCodes.length; j++){ // look at every logger
+                if (meterCodes[i].equals(loggerCodes[j])) {
+                    found = true;
+                    break; // break if logger matching meter is found
+                }
+            }
+            if (!found){
+                errors++;
+                //System.out.println("Error: " + meterCodes[i] + " - '" + meterDescs[i] + "' no Logger");
+
+                Map<String, String> vals = new HashMap<>();
+                vals.put("error_type", "\"meter no loggers\"");
+                vals.put("asset_code", "\""+meterCodes[i]+"\"");
+                vals.put("description", "\""+meterDescs[i]+"\"");
+                database.addRecord("metadataerrors", vals);
+            }
+        }
+        System.out.println("Meters without Loggers: " + errors);
+
+        System.out.println("Metadata Processing Successful");
     }
 
     public void processFile(){
@@ -219,10 +339,9 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
     /**
      * A list of building names available in the CKAN metadata
      * @return Array of building names
-     * @throws RemoteException Problem with remote procedure call
      */
-    public String[] getBuildingList() throws RemoteException{
-        ArrayList<String> outputList = new ArrayList<String>();
+    public String[] getBuildingList() {
+        ArrayList<String> outputList = new ArrayList<>();
 
         JSONArray loggerList = loggerJSON.getJSONObject("result").getJSONArray("records"); //list of loggers / controllers
         for (int i = 0; i < loggerList.length(); i++) { // loop through every logger
@@ -239,23 +358,23 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface{
     }
 
     /**
-     * <></>
-     * @param JSONObj
-     * @param toFind
-     * @return
-     * @throws RemoteException
+     * A set of elements from a specified JSON attribute; duplicate elements are ignores
+     * @param JSONObj JSON object to search records
+     * @param toFind Element name to find
+     * @return List of unique element names from JSONObject
      */
-    public String[] getSpecified(JSONObject JSONObj, String toFind) throws RemoteException{
-        ArrayList<String> outputList = new ArrayList<String>();
-
-        JSONArray loggerList = JSONObj.getJSONObject("result").getJSONArray("records"); //list of loggers / controllers
-        for (int i = 0; i < loggerList.length(); i++) { // loop through every logger
-            String name = loggerList.getJSONObject(i).getString(toFind);
+    public String[] getSpecified(JSONObject JSONObj, String toFind) {
+        ArrayList<String> outputList = new ArrayList<>();
+        JSONArray objList = JSONObj.getJSONObject("result").getJSONArray("records"); // list of JSONObjects
+        for (int i = 0; i < objList.length(); i++) { // loop through every object
+            String name = objList.getJSONObject(i).getString(toFind);
             if (!outputList.contains(name)){
-                outputList.add(name); // add building name of logger to return list, if it hasnt been seen already
+                outputList.add(name); // add element name to output
             }
         }
-
+        if (outputList.size() == 0) {
+            System.out.println("WARNING: No elements found for " + toFind + "in JSONObject");
+        }
         /*Convert ArrayList to String array*/
         String[] outputArray = new String[outputList.size()];
         outputArray = outputList.toArray(outputArray);
