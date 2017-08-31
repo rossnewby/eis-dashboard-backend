@@ -147,11 +147,11 @@ public class Database {
     }
 
     /**
-     * Prints all the tables in the database; used for debugging and referencing
+     * Prints all tables in database; used for debugging and referencing
      */
     public void printDatabase() {
         //find out what all the table names in the database are
-        ArrayList<String> tables = new ArrayList<String>();
+        ArrayList<String> tables = new ArrayList<>();
         try {
             DatabaseMetaData md = con.getMetaData();
 
@@ -215,9 +215,9 @@ public class Database {
 
                 //print bottom border
                 for (int j = 0; j < cols.size(); j++) {
-                    System.out.print(pad("") + " + ");
+                    System.out.print(" + " + pad(""));
                 }
-                System.out.println("");
+                System.out.println(" + ");
 
                 rSet.close();
                 sqlStmt.close();

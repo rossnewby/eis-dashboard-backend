@@ -242,8 +242,6 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             }
             if (!found){
                 errors++;
-                //System.out.println("Error: " + loggerCodes[i] + " - '" + loggerDescs[i] + "' no Meters");
-
                 Map<String, String> vals = new HashMap<>();
                 vals.put("error_type", "\"logger no meter\"");
                 vals.put("asset_code", "\""+loggerCodes[i]+"\"");
@@ -265,8 +263,6 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             }
             if (!found){
                 errors++;
-                //System.out.println("Error: " + meterCodes[i] + " - '" + meterDescs[i] + "' no Logger");
-
                 Map<String, String> vals = new HashMap<>();
                 vals.put("error_type", "\"meter no loggers\"");
                 vals.put("asset_code", "\""+meterCodes[i]+"\"");
