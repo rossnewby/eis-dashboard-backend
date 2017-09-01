@@ -9,11 +9,17 @@ Setupy MySQL DB*
 Add a config.properties file to source directory (src) of the form:
 
 '''properties
+
 apikey=<insert your ckan api key>
+  
 apiuser=<insert ckan api basic auth username>
+  
 apipass=<insert ckan api basic auth password>
+  
 mysqluser=root
+
 mysqlpass=<insert your mysql root password; default = "">
+
 '''
 
 ## Dependancies
