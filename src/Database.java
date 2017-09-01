@@ -5,22 +5,25 @@ import java.util.Map;
 import java.util.Properties;
 
 /**
+ * Class used for manipulating a MySQL database
+ *
  * @Author Ross Newby
  */
 public class Database {
 
-    private static final String URL = "jdbc:mysql://localhost:3306/eisquality";
+    private static String URL = "not set";
     private static String USER = "not set";
     private static String PASSWORD = "not set";
     static private final int PAD_SIZE = 30;
 
-    private Connection con;
+    private Connection con; // mysql DB connection
     private Statement st;
     private ResultSet rs;
 
-    public Database(){
+    public Database(String url){
 
         /*Read configuration file; populate variables*/
+        this.URL = url;
         try {
             Properties prop = new Properties();
             String propFileName = "config.properties";
@@ -54,13 +57,14 @@ public class Database {
     }
 
     /**
-     *
-     * @param tableName
-     * @param values
+     * Adds a record to the database by constructing an executing an SQL statement
+     * @param tableName Name of mysql table to add values in
+     * @param values Values to insert; must be comma separated ie 'value1, value2, valueN'
      */
     public void addRecord(String tableName, String values){
 
         try {
+            /*Construct SQL statement based on input parameters*/
             String query = ("INSERT INTO "+ tableName + " VALUES (default, " + values + ")");
             //System.out.println("Executing >> " + query); //debug
             st.executeUpdate(query);
@@ -71,12 +75,13 @@ public class Database {
     }
 
     /**
-     *
-     * @param tableName
-     * @param values
+     * Adds a record to the database by constructing an executing an SQL statement
+     * @param tableName Name of mysql table to add values in
+     * @param values Values to add, where key is the column name and value is the value to add to that column
      */
     public void addRecord(String tableName, Map<String, String> values){
         try {
+            /*Construct SQL statement based on input parameters*/
             StringBuilder columnNames = new StringBuilder();
             StringBuilder valueNames = new StringBuilder();
 

@@ -14,30 +14,34 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Contains the methods for quality assurance processing
+ * Main Class quality assurance processing
  *
  * @Author Ross Newby
  */
 public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
 
+    /*Variables used for metadata and other JSONs*/
     private JSONObject packageJSON = null; // JSON objects for all metadata
     private JSONObject meterJSON = null;
     private JSONObject loggerJSON = null;
     private Thread meterThread, loggerThread; // threads for initial metadata reading
-    private JSONObject readingJSON = null; // JSON for current CKAN request
+    private JSONObject readingJSON = null; // Global JSON object for reading multiple requests in threads
 
+    /*Used to access CKAN and other files, if paths / names change; amend them here*/
+    private static final String DB_INIT_FILEPATH = "src/eisqualityinit.sql"; // mysql database initialisation file
+    private static final String DB_HOST = "jdbc:mysql://localhost:3306/eisquality";
     private static final String METER_SENSOR_METADATA_NAME = "Planon metadata - Meters Sensors"; // names of metadata files in CKAN
     private static final String LOGGER_CONTROLLER_METADATA_NAME = "Planon metadata - Loggers Controllers";
     private static final String BMS_CLASSIFICATION_GROUP = "Energy meter"; // identifier for EMS records
     private static final String EMS_CLASSIFICATION_GROUP = "Energy sensor"; // identifier for BMS records
 
-    private Database database = null;
-    private Scanner scanner = new Scanner(System.in);
+    private Database database = null; // mysql database
+    private Scanner scanner = new Scanner(System.in); // used for basic console line input
     private String input = null;
 
     /**
-     * Initialises a server by reading basic authentication details and API data from config file.
-     * Queries CKAN datastore for all metadata and returns once JSON objects have been read completely.
+     * Initialises a server by reading basic authentication details and API data from config file. Also queries CKAN datastore for all
+     * metadata and returns once JSON objects have been read completely. EIS Quality database in MySQL is initialised.
      * @throws RemoteException Problem during remote procedure call
      * @throws FileNotFoundException If config.properties file not found in root directory
      */
@@ -112,11 +116,12 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         }
 
         /*Connect to Database*/
-        database = new Database();
+        database = new Database(DB_HOST);
         try {
-            database.executeSQLScript("C:/Users/Ross/Documents/University/Intern - EIS Dashboard/SQL Scripts/eisqualityinit.sql");
+            database.executeSQLScript(DB_INIT_FILEPATH);
         }
         catch (Exception e) {
+            System.out.println("Could not initialise DB, likely problem with 'eisqualityinit.sql' file");
             e.printStackTrace();
         }
         database.printDatabase(); //debug
@@ -134,7 +139,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             INVALID:
             {
                 System.out.println("-- Actions --");
-                System.out.println("Select an Action:\n" +
+                System.out.println("Select an Action:\n" + // TODO These aren't final options, they're just needed for development
                                     "  1) Print Database\n" +
                                     "  2) Test Metadata Quality\n" +
                                     "  3) Test BMS Data Quality* (print loggerCodes)\n" +
@@ -150,20 +155,15 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                     testMetadata();
                 }
                 else if ("3".equals(input)){
-//                    for (int i = 0; i < loggerCodes.length; i++)
-//                        System.out.println(loggerCodes[i]);
+                    //...
                 }
                 else if ("4".equals(input)){
-                    // TESTING ONLY
-                    // processFile();
-//                    for (int i = 0; i < meterCodes.length; i++)
-//                        System.out.println(meterCodes[i]);
+                    //...
                 }
                 else if ("5".equals(input)){
-                    //processFile();
-                    processMeter("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}", "D1"); //testing only
+                    getMeterJSON("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}", "D1"); //testing only
                 }
-                else if ("9".equals(input)){
+                else if ("9".equals(input)){ // Disable console inputs
                     System.out.println("Actions no longer available");
                 }
                 else if ("e".equals(input)) { // Close application
@@ -176,6 +176,9 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         }
     }
 
+    /**
+     * Tests the CKAN metadata for errors and adds any detected errors to the sql database
+     */
     public void testMetadata() {
         System.out.println("Processing Metadata..."); //debug
         String[] loggerCodes, meterCodes;
@@ -253,41 +256,18 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         System.out.println("Metadata Processing Successful");
     }
 
-    public void processFile(){
-        try {
-            CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/package_show?id=bms");
-            JSONObject bmsJSON = ckanReq.requestJSON();
-            JSONArray bmsList = bmsJSON.getJSONObject("result").getJSONArray("resources"); // Array of bms fines in CKAN
+    /**
+     * Tests a BMS / EMS logger for errors and adds any detected errors to the sql database
+     */
+    public void testLogger(){
+        /*repeatedly test meters from a logger using testMeter method*/
+    }
 
-            String lookingFor = "bms-jun-2017";
-            for (int i = 0; i < bmsList.length(); i++) {
-
-                if (bmsList.getJSONObject(i).getString("name").equals(lookingFor)){
-
-                    String id = bmsList.getJSONObject(i).getString("id");
-                    new Thread() {
-                        public void run() {
-                            try {
-                                //CKANRequest ckanReq = new CKANRequest("https://ckan.lancaster.ac.uk/api/action/datastore_search?resource_id="+id+"&offset="+0+"&limit="+50000);
-                                //readJSON = requestJSON("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
-                                //readJSON = ckanReq.ckanRequestLong("https://ckan.lancaster.ac.uk/api/action/datastore_search?resource_id="+id);
-                                CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"%20WHERE%20device_id='{05937EE0-58E6-42F3-B6BD-A180D9634B6C}'%20AND%20module_key='D1'");
-                                readingJSON = ckanReq.requestJSON();
-                                System.out.println("Back to Server Class");
-                                writeFile(readingJSON, lookingFor);
-                            }
-                            catch (Exception e){
-                                e.printStackTrace();
-                            }
-                        }
-                    }.start();
-                }
-            }
-        }
-        catch (Exception e){
-            System.out.println("Error Processing BMS:");
-            e.printStackTrace();
-        }
+    /**
+     * Tests BMS / EMS meter for errors and adds any detected errors to the sql database
+     */
+    public void testMeter(){
+        /*test a meter; checking for errors. Using the getMeterJSON method, this might be better in a separate class** */
     }
 
     /**
@@ -295,8 +275,10 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
      * Both the logger code and module key make a unique identifier for the Meter
      * @param loggerCode Meters / sensor's logger code
      * @param moduleKey Meter / sensor's module key
+     * @return JSON of all data for the specified meter
      */
-    public void processMeter(String loggerCode, String moduleKey){
+    public JSONObject getMeterJSON(String loggerCode, String moduleKey){
+        readingJSON = null; // reset JSONObject for reading; precaution
         try {
             /*List of BMS files in CKAN*/
             CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/package_show?id=bms");
@@ -307,32 +289,30 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                 String fileName = bmsList.getJSONObject(i).getString("name"); // next BMS filename
                 if (!fileName.equals("bmsdevicemeta")) {
                     if (!fileName.equals("bmsmodulemeta")) {// don't include bms metadata in list
-                        fileList.add(bmsList.getJSONObject(i).getString("id"));
-                        System.out.println("Added: " + fileName + ", " + bmsList.getJSONObject(i).getString("id")); //debug
+                        if(fileName.contains("2017") || fileName.equals("bms-dec-2016")) { //TODO Account for older 2016 data
+                            fileList.add(bmsList.getJSONObject(i).getString("id"));
+                            System.out.println("Added: " + fileName + ", " + bmsList.getJSONObject(i).getString("id")); //debug
+                        }
                     }
                 }
             }
 
-            /*Read JSON object for first file and remove reference from list*/
-            ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" +
-                                        fileList.get(0) + "\"%20WHERE%20device_id='"+loggerCode+"'%20AND%20module_key='"+moduleKey+"'");
-            readingJSON = ckanReq.requestJSON();
-            fileList.remove(0);
-
-            String[] bmsFileIDs = new String[fileList.size()]; // convert list of filenames to regular String[] array
-            fileList.toArray(bmsFileIDs);
+            String[] bmsFileIDs = convertToArray(fileList); // convert list of filenames to regular array
+            readingJSON = new JSONObject("{}");
 
             /*Get data for meter from every bms file*/
             ExecutorService es = Executors.newCachedThreadPool();
-            for (String id: bmsFileIDs) { // for every bms file
+            for (String fileID: bmsFileIDs) { // for every bms file
                 es.execute(new Thread() { // execute code on new thread
                     public void run() {
                         try {
+                            /*Accumulate all data for the meter from each file*/
                             CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\""
-                                                                    + id + "\"%20WHERE%20device_id='"+loggerCode+"'%20AND%20module_key='"+moduleKey+"'");
-                            JSONObject newJSON = ckanReq.requestJSON(); // JSON object of meter data from CKAN
-                            JSONArray toAccumulate = newJSON.getJSONObject("result").getJSONArray("records");
-                            readingJSON.accumulate("records", toAccumulate); // append meter data to current JSONObject
+                                                                    + fileID + "\"%20WHERE%20device_id='"+loggerCode+"'%20AND%20module_key='"+moduleKey+"'");
+                            JSONObject newJSON = ckanReq.requestJSON(); // JSON object of meter data from this file
+                            JSONArray toAccumulate = newJSON.getJSONObject("result").getJSONArray("records"); // records from JSON object to append
+                            readingJSON.accumulate("files", fileID); // append file id of current file to the new wJSON object
+                            readingJSON.accumulate("records", toAccumulate); // append meter data to the new JSON object
                         }
                         catch (Exception e) {
                             e.printStackTrace();
@@ -342,17 +322,18 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             }
 
             /*Wait for all thread to end*/
-            System.out.println("Waiting on Threads for " + loggerCode + "...");
+            System.out.println("Waiting on Threads for " + loggerCode + "-" + moduleKey + "...");
             es.shutdown();
             es.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
             System.out.println("All Threads Complete for " + loggerCode + "-" + moduleKey);
 
-            //For now; output result to file for debug
-            writeFile(readingJSON, loggerCode+"-"+moduleKey);
+            writeFile(readingJSON, loggerCode+"-"+moduleKey); //Debug; output result to file for debug
+
         }
         catch (Exception e){
             e.printStackTrace();
         }
+        return readingJSON;
     }
 
     /**
@@ -377,7 +358,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
     }
 
     /**
-     * A set of elements from a specified JSON attribute; duplicate elements are ignores
+     * A set of elements from a specified JSON attribute; duplicate elements are ignored
      * @param JSONObj JSON object to search records
      * @param toFind Element name to find
      * @return List of unique element names from JSONObject

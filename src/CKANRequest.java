@@ -79,10 +79,10 @@ public class CKANRequest {
         /*parse return string to a JSON object*/
         try {
             ret = new JSONObject(response);
-            System.out.println("CKAN Successful: " + url); // debug
+            //System.out.println("CKAN Successful: " + url); // debug
         }
         catch (Exception e){
-            System.out.println("CKAN Request Error:");
+            System.out.println("CKAN Request Error for " + this.url);
             //e.printStackTrace();
         }
 
@@ -131,7 +131,7 @@ public class CKANRequest {
     public String requestString(String url) throws RemoteException {
 
         StringBuffer response = null;
-        System.out.println("CKAN Requesting: " + url.toString()); // debug
+        //System.out.println("CKAN Requesting: " + url.toString()); // debug
         try {
             URL newURL = new URL(url);
             HttpsURLConnection con = (HttpsURLConnection) newURL.openConnection();
