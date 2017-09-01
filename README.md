@@ -8,7 +8,7 @@ Setupy MySQL DB*
 
 Add a config.properties file to source directory (src) of the form:
 
-'''properties
+```properties
 
 apikey=<insert your ckan api key>
   
@@ -20,7 +20,7 @@ mysqluser=root
 
 mysqlpass=<insert your mysql root password; default = "">
 
-'''
+```
 
 ## Dependancies
 
