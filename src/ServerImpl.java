@@ -5,10 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.rmi.*;
 import java.rmi.server.UnicastRemoteObject;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Scanner;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -142,8 +139,8 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                 System.out.println("Select an Action:\n" + // TODO These aren't final options, they're just needed for development
                                     "  1) Print Database\n" +
                                     "  2) Test Metadata Quality\n" +
-                                    "  3) Test BMS Data Quality* (print loggerCodes)\n" +
-                                    "  4) Test EMS Data Quality* (print meterCodes)\n" +
+                                    "  3) Test All Data Quality\n" +
+                                    "  4) Test Specific Logger\n" +
                                     "  5) Test Specific Meter\n" +
                                     "  9) Disable Actions");
                 input = scanner.nextLine();
@@ -158,10 +155,11 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                     //...
                 }
                 else if ("4".equals(input)){
-                    //...
+                    testLogger("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}");
                 }
                 else if ("5".equals(input)){
-                    getMeterJSON("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}", "D1"); //testing only
+                    testMeter("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}", "D1");
+                    //getMeterJSON("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}", "D1"); //testing only
                 }
                 else if ("9".equals(input)){ // Disable console inputs
                     System.out.println("Actions no longer available");
@@ -258,16 +256,86 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
 
     /**
      * Tests a BMS / EMS logger for errors and adds any detected errors to the sql database
+     * @param loggerCode Logger's unique code
      */
-    public void testLogger(){
+    public void testLogger(String loggerCode){
         /*repeatedly test meters from a logger using testMeter method*/
+        JSONObject meterJSON = getMeterJSON(loggerCode, "D1");
+        JSONArray meterArr = meterJSON.getJSONArray("records");
+        try {
+            writeFile(meterArr, "Testing-" + loggerCode);
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     /**
-     * Tests BMS / EMS meter for errors and adds any detected errors to the sql database
+     * Tests meter for errors and adds any detected errors to the sql database
+     * @param loggerCode Meters / sensor's logger code
+     * @param moduleKey Meter / sensor's module key
      */
-    public void testMeter(){
-        /*test a meter; checking for errors. Using the getMeterJSON method, this might be better in a separate class** */
+    public void testMeter(String loggerCode, String moduleKey){
+
+        /*Get all Meter reading from CKAN*/
+        JSONObject meterJSON = getMeterJSON(loggerCode, moduleKey);
+        JSONArray meterArray = meterJSON.getJSONArray("records");
+        System.out.println("Arrays in meterJSON: " + meterArray.length());
+
+        /*Add each JSONObject from meter into a list*/
+        List<JSONObject> jsonValues = new ArrayList<>();
+        for (int i = 1; i < meterArray.length(); i++) { //TODO change looping when getMeterJSON returns one singular array
+            JSONArray jsonArray = meterArray.getJSONArray(i);
+            System.out.println("Arrays in jsonArray: " + jsonArray.length());
+            for (int j = 0; j < jsonArray.length(); j++) {
+                jsonValues.add(jsonArray.getJSONObject(j));
+            }
+        }
+
+        /*Sort the meter readings by their timestamp*/
+        Collections.sort( jsonValues, new Comparator<JSONObject>() {
+
+            private static final String KEY_NAME = "timestamp"; // key to sort JSONArray by
+
+            @Override
+            public int compare(JSONObject a, JSONObject b) {
+                String valA = new String();
+                String valB = new String();
+
+                try {
+                    valA = a.getString(KEY_NAME);
+                    valB = b.getString(KEY_NAME);
+                }
+                catch (JSONException e) {
+                    System.out.println("Error: No value for key '"+KEY_NAME+"' in JSONObject");
+                }
+
+                return valA.compareTo(valB); // change to - to change sort order
+            }
+        });
+
+//        /**/
+//        JSONArray sortedMeterArray = new JSONArray();
+//        for (int i = 0; i < meterArray.length(); i++) {
+//            sortedMeterArray.put(jsonValues.get(i));
+//        }
+
+        /*Debug: print list for verification*/
+        try {
+            writeFile(jsonValues, "Sorted-" + loggerCode);
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        /*Check whether meter has recent data*/
+        //...
+
+        /*Check Quality of reading: -ve data, no data etc.*/
+        //...
+
+        /*Check time interval of readings is correct*/
+        //...
     }
 
     /**
@@ -297,8 +365,8 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                 }
             }
 
-            String[] bmsFileIDs = convertToArray(fileList); // convert list of filenames to regular array
-            readingJSON = new JSONObject("{}");
+            String[] bmsFileIDs = convertToArray(fileList); // convert list of file IDs to regular array
+            readingJSON = new JSONObject(); // empty JSON to repeatedly update with meter data
 
             /*Get data for meter from every bms file*/
             ExecutorService es = Executors.newCachedThreadPool();
@@ -328,7 +396,6 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             System.out.println("All Threads Complete for " + loggerCode + "-" + moduleKey);
 
             writeFile(readingJSON, loggerCode+"-"+moduleKey); //Debug; output result to file for debug
-
         }
         catch (Exception e){
             e.printStackTrace();
@@ -409,7 +476,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
      * @param obj JSONObject to write to file
      * @param name Name of text file (excluding '.txt'
      */
-    private void writeFile(JSONObject obj, String name) throws IOException{
+    private void writeFile(Object obj, String name) throws IOException{
         String fileName = name+".txt";
         try (FileWriter file = new FileWriter(fileName)) {
             file.write(obj.toString());

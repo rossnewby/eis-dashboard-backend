@@ -158,8 +158,11 @@ public class CKANRequest {
             System.out.print("CKAN Connection Error: ");
             if (response == null){ // no response from CKAN with specified URL
                 //throw new RemoteException("CKAN Response 'null'");
-                System.out.println("CKAN Response 'null'");
+                System.out.println("CKAN Response 'null' for " + this.url);
                 return "";
+            }
+            else {
+                System.out.println(this.url);
             }
             //e.printStackTrace();
         }

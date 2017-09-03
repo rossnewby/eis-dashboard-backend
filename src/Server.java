@@ -20,7 +20,7 @@ public class Server {
             //Naming.rebind("rmi://localhost:1099/EISQualityService", c);
         }
         catch (Exception e) {
-            System.out.println("RMI Binding Error:");
+            System.out.println("Server Error:");
             e.printStackTrace();
         }
     }
