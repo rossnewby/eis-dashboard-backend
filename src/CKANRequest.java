@@ -27,7 +27,6 @@ public class CKANRequest {
     private String apipass = null;
 
     private static final int CHUNK_SIZE = 50000;
-    private int counter = 0;
 
     /**
      *
@@ -74,15 +73,16 @@ public class CKANRequest {
     public JSONObject requestJSON() throws RemoteException{
 
         JSONObject ret = null;
-        String response = requestString(url.toString());
 
         /*parse return string to a JSON object*/
         try {
+            String response = requestString(url.toString());
             ret = new JSONObject(response);
             //System.out.println("CKAN Successful: " + url); // debug
         }
+
         catch (Exception e){
-            System.out.println("CKAN Request Error for " + this.url);
+            System.out.println("CKAN Request Error for " + url);
             //e.printStackTrace();
         }
 

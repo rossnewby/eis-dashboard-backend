@@ -180,7 +180,7 @@ public class Database {
                 ResultSet rSet = sqlStmt.executeQuery(sqlCmdStr);
                 ResultSetMetaData mData = rSet.getMetaData();
 
-                System.out.println("Table: " + mData.getTableName(2));
+                System.out.println("Table: " + mData.getTableName(2) + "("+mData.getColumnCount()+" cols)");
 
                 int rowCount = mData.getColumnCount();
 
@@ -240,6 +240,11 @@ public class Database {
      * @return Input string extended or cropped to the length of STR_SIZE
      */
     private String pad(String in) {
+
+        if (in == null){
+            in = "";
+        }
+
         byte[] org_bytes = in.getBytes();
         byte[] new_bytes = new byte[PAD_SIZE];
         int upb = in.length();

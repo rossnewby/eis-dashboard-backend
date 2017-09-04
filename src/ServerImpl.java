@@ -1,3 +1,5 @@
+//package java.eis.quality;
+
 import java.io.*;
 import org.json.*;
 import java.nio.charset.Charset;
@@ -118,7 +120,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             database.executeSQLScript(DB_INIT_FILEPATH);
         }
         catch (Exception e) {
-            System.out.println("Could not initialise DB, likely problem with 'eisqualityinit.sql' file");
+            System.out.println("Could not initialise DB, problem with 'eisqualityinit.sql' file");
             e.printStackTrace();
         }
         database.printDatabase(); //debug
@@ -210,9 +212,14 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
 
         System.out.println("Loggers Codes: " + loggerCodes.length + ", Meter Codes: " + meterCodes.length); //debug
 
-        /*Test for loggers without meters*/
+        /*Test every logger in metadata*/
         int errors = 0;
+        int errorID = 1;
+
         for (int i = 0; i < loggerCodes.length; i++){ // for every logger
+            boolean errorDetected = false;
+
+            /*Test for loggers without meters*/
             boolean found = false;
             for (int j = 0; j < meterCodes.length; j++){ // look at every meter
                 if (loggerCodes[i].equals(meterCodes[j])) {
@@ -221,19 +228,56 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                 }
             }
             if (!found){
-                errors++;
+                errorDetected = true;
                 Map<String, String> vals = new HashMap<>();
-                vals.put("error_type", "\"logger no meter\"");
+                vals.put("error_type", "\"logger no meter\""); // Add error to database
+                vals.put("asset_id", Integer.toString(errorID));
                 vals.put("asset_code", "\""+loggerCodes[i]+"\"");
                 vals.put("description", "\""+loggerDescs[i]+"\"");
-                database.addRecord("metadataerrors", vals); // Add error to database
+                database.addRecord("metadataerrors", vals);
+            }
+
+            /*Test for loggers with missing data fields (asset code, logger channel, description etc...*/
+            if (loggerList.getJSONObject(i).getString("Building Code").equals("")){ // no building code
+                errorDetected = true;
+                Map<String, String> vals = new HashMap<>();
+                vals.put("error_type", "\"logger no building code\""); // Add error to database
+                vals.put("asset_id", Integer.toString(errorID));
+                vals.put("asset_code", "\""+loggerCodes[i]+"\"");
+                vals.put("description", "\""+loggerDescs[i]+"\"");
+                database.addRecord("metadataerrors", vals);
+            }
+            if (loggerList.getJSONObject(i).getString("Description").equals("")){ // no description
+                errorDetected = true;
+                Map<String, String> vals = new HashMap<>();
+                vals.put("error_type", "\"logger no description\""); // Add error to database
+                vals.put("asset_id", Integer.toString(errorID));
+                vals.put("asset_code", "\""+loggerCodes[i]+"\"");
+                vals.put("description", "\""+loggerDescs[i]+"\"");
+                database.addRecord("metadataerrors", vals);
+            }
+
+            /*If an error was found for the logger, add this logger to quality database*/
+            if (errorDetected){
+                errors++;
+                errorID++;
+                Map<String, String> vals = new HashMap<>();
+                vals.put("logger_code", "\""+loggerCodes[i]+"\"");
+                vals.put("building_code", "\""+loggerList.getJSONObject(i).getString("Building Code")+"\""); // Add error to database
+                vals.put("description", "\""+loggerDescs[i]+"\"");
+                vals.put("additional_loc_info", "\""+loggerList.getJSONObject(i).getString("Additional Location Info")+"\"");
+                vals.put("asset_code", "\""+loggerList.getJSONObject(i).getString("Asset Code")+"\"");
+                database.addRecord("erroneousassets", vals);
             }
         }
-        System.out.println("Loggers without Meters: " + errors);
+        System.out.println("Erroneous Loggers: " + errors);
 
-        /*Test for meters without loggers*/
+        /*Test every meter in metadata*/
         errors = 0;
         for (int i = 0; i < meterCodes.length; i++){ // for every meter
+            boolean errorDetected = false;
+
+            /*Test for meters without loggers*/
             boolean found = false;
             for (int j = 0; j < loggerCodes.length; j++){ // look at every logger
                 if (meterCodes[i].equals(loggerCodes[j])) {
@@ -242,15 +286,33 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                 }
             }
             if (!found){
-                errors++;
+                errorDetected = true;
                 Map<String, String> vals = new HashMap<>();
                 vals.put("error_type", "\"meter no loggers\"");
+                vals.put("asset_id", Integer.toString(errorID));
                 vals.put("asset_code", "\""+meterCodes[i]+"\"");
                 vals.put("description", "\""+meterDescs[i]+"\""); //TODO Improve descriptions (account for blanks and expand desc)
                 database.addRecord("metadataerrors", vals); // Add error to database
             }
+
+            /*Test for meters with missing data fields (asset code, logger channel, description etc...*/
+            //...
+
+            /*If an error was found for the meter, add this meter to database*/
+            if (errorDetected){
+                errors++;
+                errorID++;
+                Map<String, String> vals = new HashMap<>();
+                vals.put("logger_code", "\""+meterCodes[i]+"\""); // Add error to database
+                vals.put("logger_channel", "\""+meterList.getJSONObject(i).getString("Logger Channel")+"\"");
+                vals.put("description", "\""+meterDescs[i]+"\"");
+                vals.put("utility_type", "\""+meterList.getJSONObject(i).getString("Utility Type")+"\"");
+                vals.put("additional_loc_info", "\""+meterList.getJSONObject(i).getString("Additional Location Info")+"\"");
+                vals.put("asset_code", "\""+meterList.getJSONObject(i).getString("Asset Code")+"\"");
+                database.addRecord("erroneousassets", vals);
+            }
         }
-        System.out.println("Meters without Loggers: " + errors);
+        System.out.println("Erroneous Meters: " + errors);
         System.out.println("Metadata Processing Successful");
     }
 
@@ -260,10 +322,9 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
      */
     public void testLogger(String loggerCode){
         /*repeatedly test meters from a logger using testMeter method*/
-        JSONObject meterJSON = getMeterJSON(loggerCode, "D1");
-        JSONArray meterArr = meterJSON.getJSONArray("records");
+        List<JSONObject> meterJSON = getMeterJSON(loggerCode, "D1");
         try {
-            writeFile(meterArr, "Testing-" + loggerCode);
+            writeFile(meterJSON, "Testing-" + loggerCode);
         }
         catch (Exception e) {
             e.printStackTrace();
@@ -277,20 +338,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
      */
     public void testMeter(String loggerCode, String moduleKey){
 
-        /*Get all Meter reading from CKAN*/
-        JSONObject meterJSON = getMeterJSON(loggerCode, moduleKey);
-        JSONArray meterArray = meterJSON.getJSONArray("records");
-        System.out.println("Arrays in meterJSON: " + meterArray.length());
-
-        /*Add each JSONObject from meter into a list*/
-        List<JSONObject> jsonValues = new ArrayList<>();
-        for (int i = 1; i < meterArray.length(); i++) { //TODO change looping when getMeterJSON returns one singular array
-            JSONArray jsonArray = meterArray.getJSONArray(i);
-            System.out.println("Arrays in jsonArray: " + jsonArray.length());
-            for (int j = 0; j < jsonArray.length(); j++) {
-                jsonValues.add(jsonArray.getJSONObject(j));
-            }
-        }
+        List<JSONObject> jsonValues = getMeterJSON(loggerCode, moduleKey); // List of JSON objects for meter readings
 
         /*Sort the meter readings by their timestamp*/
         Collections.sort( jsonValues, new Comparator<JSONObject>() {
@@ -310,15 +358,9 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                     System.out.println("Error: No value for key '"+KEY_NAME+"' in JSONObject");
                 }
 
-                return valA.compareTo(valB); // change to - to change sort order
+                return -valA.compareTo(valB); // -ve to sort in descending order; most recent dates first
             }
         });
-
-//        /**/
-//        JSONArray sortedMeterArray = new JSONArray();
-//        for (int i = 0; i < meterArray.length(); i++) {
-//            sortedMeterArray.put(jsonValues.get(i));
-//        }
 
         /*Debug: print list for verification*/
         try {
@@ -339,55 +381,68 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
     }
 
     /**
-     * Convert all data for a single meter / sensor to a single JSON object.
+     * Convert all data for a single meter / sensor to a single list of JSON objects.
      * Both the logger code and module key make a unique identifier for the Meter
      * @param loggerCode Meters / sensor's logger code
      * @param moduleKey Meter / sensor's module key
-     * @return JSON of all data for the specified meter
+     * @return List of all data for the specified meter
      */
-    public JSONObject getMeterJSON(String loggerCode, String moduleKey){
+    public List<JSONObject> getMeterJSON(String loggerCode, String moduleKey){
+
         readingJSON = null; // reset JSONObject for reading; precaution
+        List<JSONObject> jsonValues = new ArrayList<>();
+
         try {
             /*List of BMS files in CKAN*/
             CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/package_show?id=bms");
             JSONObject bmsJSON = ckanReq.requestJSON();
             JSONArray bmsList = bmsJSON.getJSONObject("result").getJSONArray("resources"); // Array of bms files in CKAN (JSON Objects)
-            ArrayList<String> fileList = new ArrayList<>(); // list of BMS filenames in CKAN
+            //ArrayList<String> fileList = new ArrayList<>(); // list of BMS filenames in CKAN
+            Map<String, String> fileMap = new HashMap<>();
             for (int i = 0; i < bmsList.length(); i++){ // each BMS file
                 String fileName = bmsList.getJSONObject(i).getString("name"); // next BMS filename
                 if (!fileName.equals("bmsdevicemeta")) {
                     if (!fileName.equals("bmsmodulemeta")) {// don't include bms metadata in list
                         if(fileName.contains("2017") || fileName.equals("bms-dec-2016")) { //TODO Account for older 2016 data
-                            fileList.add(bmsList.getJSONObject(i).getString("id"));
+                            //fileList.add(bmsList.getJSONObject(i).getString("id"));
+                            fileMap.put(bmsList.getJSONObject(i).getString("id"), fileName);
                             System.out.println("Added: " + fileName + ", " + bmsList.getJSONObject(i).getString("id")); //debug
                         }
                     }
                 }
             }
 
-            String[] bmsFileIDs = convertToArray(fileList); // convert list of file IDs to regular array
             readingJSON = new JSONObject(); // empty JSON to repeatedly update with meter data
 
-            /*Get data for meter from every bms file*/
+            /*Get data for the specified meter from every bms file*/
             ExecutorService es = Executors.newCachedThreadPool();
-            for (String fileID: bmsFileIDs) { // for every bms file
+            for (String fileID: fileMap.keySet()) { // for every bms file
                 es.execute(new Thread() { // execute code on new thread
                     public void run() {
                         try {
-                            /*Accumulate all data for the meter from each file*/
+                            /*Get meter data from bms file*/
                             CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\""
                                                                     + fileID + "\"%20WHERE%20device_id='"+loggerCode+"'%20AND%20module_key='"+moduleKey+"'");
                             JSONObject newJSON = ckanReq.requestJSON(); // JSON object of meter data from this file
+
+                            /*Append meter data to JSON*/
                             JSONArray toAccumulate = newJSON.getJSONObject("result").getJSONArray("records"); // records from JSON object to append
-                            readingJSON.accumulate("files", fileID); // append file id of current file to the new wJSON object
                             readingJSON.accumulate("records", toAccumulate); // append meter data to the new JSON object
+
+                            /*TODO Is it better to have this slower, but neater approach?*/
+                            /*Adding each JSONObject separately (below) results in a better return JSON but much longer processing time
+                            for (int i = 0; i < toAccumulate.length(); i++){
+                                readingJSON.accumulate("records", toAccumulate.getJSONObject(i));
+                            }*/
                         }
                         catch (Exception e) {
-                            e.printStackTrace();
+                            System.out.println("Could not read " + fileMap.get(fileID));
+                            //e.printStackTrace();
                         }
                     }
                 });
             }
+            readingJSON.accumulate("files", fileMap); // append list of files to JSON
 
             /*Wait for all thread to end*/
             System.out.println("Waiting on Threads for " + loggerCode + "-" + moduleKey + "...");
@@ -395,12 +450,21 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             es.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
             System.out.println("All Threads Complete for " + loggerCode + "-" + moduleKey);
 
-            writeFile(readingJSON, loggerCode+"-"+moduleKey); //Debug; output result to file for debug
+            writeFile(readingJSON, loggerCode+"-"+moduleKey); //Debug; output result to file for verification
+
+            /*Add each JSONObject from meter into a list (which will later be returned)*/
+            JSONArray meterArray = readingJSON.getJSONArray("records");
+            for (int i = 1; i < meterArray.length(); i++) { //TODO change looping if taking the slower (but neater) approach above
+                JSONArray jsonArray = meterArray.getJSONArray(i);
+                for (int j = 0; j < jsonArray.length(); j++) {
+                    jsonValues.add(jsonArray.getJSONObject(j));
+                }
+            }
         }
         catch (Exception e){
             e.printStackTrace();
         }
-        return readingJSON;
+        return jsonValues; // Returns list of JSON objects for all meter readings
     }
 
     /**
@@ -480,7 +544,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         String fileName = name+".txt";
         try (FileWriter file = new FileWriter(fileName)) {
             file.write(obj.toString());
-            System.out.println("Successfully Copied JSON Object to File: " + fileName);
+            System.out.println("Successfully Copied Object to File: " + fileName);
         }
     }
 
