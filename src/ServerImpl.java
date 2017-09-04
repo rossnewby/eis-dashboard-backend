@@ -230,7 +230,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             if (!found){
                 errorDetected = true;
                 Map<String, String> vals = new HashMap<>();
-                vals.put("error_type", "\"logger no meter\""); // Add error to database
+                vals.put("error_type", "1"); // Add error to database
                 vals.put("asset_id", Integer.toString(errorID));
                 vals.put("asset_code", "\""+loggerCodes[i]+"\"");
                 vals.put("description", "\""+loggerDescs[i]+"\"");
@@ -241,7 +241,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             if (loggerList.getJSONObject(i).getString("Building Code").equals("")){ // no building code
                 errorDetected = true;
                 Map<String, String> vals = new HashMap<>();
-                vals.put("error_type", "\"logger no building code\""); // Add error to database
+                vals.put("error_type", "2"); // Add error to database
                 vals.put("asset_id", Integer.toString(errorID));
                 vals.put("asset_code", "\""+loggerCodes[i]+"\"");
                 vals.put("description", "\""+loggerDescs[i]+"\"");
@@ -250,7 +250,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             if (loggerList.getJSONObject(i).getString("Description").equals("")){ // no description
                 errorDetected = true;
                 Map<String, String> vals = new HashMap<>();
-                vals.put("error_type", "\"logger no description\""); // Add error to database
+                vals.put("error_type", "2"); // Add error to database
                 vals.put("asset_id", Integer.toString(errorID));
                 vals.put("asset_code", "\""+loggerCodes[i]+"\"");
                 vals.put("description", "\""+loggerDescs[i]+"\"");
@@ -288,7 +288,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             if (!found){
                 errorDetected = true;
                 Map<String, String> vals = new HashMap<>();
-                vals.put("error_type", "\"meter no loggers\"");
+                vals.put("error_type", "3");
                 vals.put("asset_id", Integer.toString(errorID));
                 vals.put("asset_code", "\""+meterCodes[i]+"\"");
                 vals.put("description", "\""+meterDescs[i]+"\""); //TODO Improve descriptions (account for blanks and expand desc)

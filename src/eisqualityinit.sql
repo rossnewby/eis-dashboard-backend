@@ -1,3 +1,5 @@
+DROP DATABASE IF EXISTS eisquality;
+CREATE DATABASE eisquality;
 USE eisquality;
 
 DROP TABLE IF EXISTS erroneousassets ;
@@ -39,5 +41,17 @@ CREATE TABLE metererrors
   PRIMARY KEY (id)
 );
 
--- INSERT INTO errors (error_type, repetitions) VALUES ("test val", 10);
+DROP TABLE IF EXISTS errortypes;
+CREATE TABLE errortypes
+(
+    id int NOT NULL auto_increment,
+    description varchar(255) NOT NULL,
+
+    PRIMARY KEY (id)
+);
+
+INSERT INTO errortypes VALUES (1, "Logger with no associated meters");
+INSERT INTO errortypes VALUES (2, "Logger with missing data");
+INSERT INTO errortypes VALUES (3, "Meters with no associated loggers");
+INSERT INTO errortypes VALUES (4, "Meter with missing data");
 
