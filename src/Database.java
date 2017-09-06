@@ -1,8 +1,8 @@
 import java.io.*;
 import java.sql.*;
-import java.util.ArrayList;
-import java.util.Map;
-import java.util.Properties;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.Date;
 
 /**
  * Class used for manipulating a MySQL database
@@ -61,7 +61,7 @@ public class Database {
      * @param tableName Name of mysql table to add values in
      * @param values Values to insert; must be comma separated ie 'value1, value2, valueN'
      */
-    public void addRecord(String tableName, String values){
+    public void addAssetRecord(String tableName, String values){
 
         try {
             /*Construct SQL statement based on input parameters*/
@@ -79,7 +79,7 @@ public class Database {
      * @param tableName Name of mysql table to add values in
      * @param values Values to add, where key is the column name and value is the value to add to that column
      */
-    public void addRecord(String tableName, Map<String, String> values){
+    public void addAssetRecord(String tableName, Map<String, String> values){
         try {
             /*Construct SQL statement based on input parameters*/
             StringBuilder columnNames = new StringBuilder();
@@ -96,7 +96,68 @@ public class Database {
             valueNames.setLength(valueNames.length()-2);
             valueNames.append(") ");
 
-            String query = ("INSERT INTO "+ tableName + columnNames + "VALUES" + valueNames);
+            String query = ("INSERT INTO "+ tableName + columnNames + "VALUES" + valueNames + "ON DUPLICATE KEY UPDATE id = id");
+            //System.out.println("Executing >> " + query); //debug
+            st.executeUpdate(query);
+        }
+        catch (Exception e){
+            e.printStackTrace();
+        }
+    }
+
+    public void addMeterError(int errType, String logCode, String logChan, Timestamp time){
+        try {
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO errors (error_type, logger_code, logger_channel, timeVal) VALUES(?, ?, ?, ?)");
+            stmt.setInt(1, errType); // specify each parameter ('?') in the query
+            stmt.setString(2,logCode);
+            stmt.setString(3, logChan);
+            stmt.setTimestamp(4, time);
+
+            int i = stmt.executeUpdate();
+            System.out.println(i+" records inserted in errors"); // debug
+        }
+        catch (Exception e){
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Adds a record to the database by constructing an executing an SQL statement
+     * @param tableName Name of mysql table to add values in
+     * @param values Values to add, where key is the column name and value is the value to add to that column
+     */
+    public void addAssetRecord(String tableName, Map<String, String> values, Map<String, String> updateOnDuplicate){
+        try {
+            /*Construct SQL statement based on input parameters*/
+            StringBuilder columnNames = new StringBuilder();
+            StringBuilder valueNames = new StringBuilder();
+
+            columnNames.append(" (");
+            valueNames.append(" (");
+            for (String key: values.keySet()){
+                columnNames.append(key + ", ");
+                valueNames.append(values.get(key) + ", ");
+            }
+            columnNames.setLength(columnNames.length()-2);
+            columnNames.append(") ");
+            valueNames.setLength(valueNames.length()-2);
+            valueNames.append(") ");
+
+            StringBuilder updateCols = new StringBuilder();
+            StringBuilder updateVals = new StringBuilder();
+
+            updateCols.append(" ");
+            updateVals.append(" ");
+            for (String key: updateOnDuplicate.keySet()){
+                updateCols.append(key + ", ");
+                updateVals.append(updateOnDuplicate.get(key) + ", ");
+            }
+            updateCols.setLength(columnNames.length()-2);
+            updateVals.append(" ");
+            updateCols.setLength(valueNames.length()-2);
+            updateVals.append(" ");
+
+            String query = ("INSERT INTO "+ tableName + columnNames + "VALUES" + valueNames + " ON DUPLICATE KEY UPDATE" + updateCols + " = " + updateVals);
             //System.out.println("Executing >> " + query); //debug
             st.executeUpdate(query);
         }
@@ -115,7 +176,7 @@ public class Database {
 
         try {
             FileReader fr = new FileReader(new File(path));
-            // be sure to not have line starting with "--" or "/*" or any other non aplhabetical character
+            // be sure to not have line starting with "--" or "/*" or any other non alphabetical character
 
             BufferedReader br = new BufferedReader(fr);
             String s;
@@ -180,7 +241,7 @@ public class Database {
                 ResultSet rSet = sqlStmt.executeQuery(sqlCmdStr);
                 ResultSetMetaData mData = rSet.getMetaData();
 
-                System.out.println("Table: " + mData.getTableName(2) + "("+mData.getColumnCount()+" cols)");
+                System.out.println("Table: " + mData.getTableName(2) + " ("+mData.getColumnCount()+" cols)");
 
                 int rowCount = mData.getColumnCount();
 

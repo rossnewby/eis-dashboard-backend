@@ -7,6 +7,9 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.rmi.*;
 import java.rmi.server.UnicastRemoteObject;
+import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -31,8 +34,8 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
     private static final String DB_HOST = "jdbc:mysql://localhost:3306/eisquality";
     private static final String METER_SENSOR_METADATA_NAME = "Planon metadata - Meters Sensors"; // names of metadata files in CKAN
     private static final String LOGGER_CONTROLLER_METADATA_NAME = "Planon metadata - Loggers Controllers";
-    private static final String BMS_CLASSIFICATION_GROUP = "Energy meter"; // identifier for EMS records
-    private static final String EMS_CLASSIFICATION_GROUP = "Energy sensor"; // identifier for BMS records
+    private static final String BMS_CLASSIFICATION_GROUP = "Energy sensor"; // identifier for EMS records
+    private static final String EMS_CLASSIFICATION_GROUP = "Energy meter"; // identifier for BMS records
 
     private Database database = null; // mysql database
     private Scanner scanner = new Scanner(System.in); // used for basic console line input
@@ -45,8 +48,6 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
      * @throws FileNotFoundException If config.properties file not found in root directory
      */
     public ServerImpl() throws RemoteException{
-
-        System.out.println("Initialising Server...");
 
         /*Get CKAN metadata*/
         try {
@@ -114,18 +115,10 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             e.printStackTrace();
         }
 
-        /*Connect to Database*/
-        database = new Database(DB_HOST);
-        try {
-            database.executeSQLScript(DB_INIT_FILEPATH);
-        }
-        catch (Exception e) {
-            System.out.println("Could not initialise DB, problem with 'eisqualityinit.sql' file");
-            e.printStackTrace();
-        }
-        database.printDatabase(); //debug
+        /*Initialise Database*/
+        // initDB(); TODO Uncomment when finished
 
-        System.out.println("Server Initialised"); // confirmation message
+        System.out.println("Setup Complete!"); // confirmation message
         serverMenu();
     }
 
@@ -137,31 +130,55 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         while (!"9".equals(input)) {
             INVALID:
             {
-                System.out.println("-- Actions --");
-                System.out.println("Select an Action:\n" + // TODO These aren't final options, they're just needed for development
+                System.out.println("-- Actions -- e to quit");
+                System.out.println("Select an Action:\n" + // Menu Options
                                     "  1) Print Database\n" +
-                                    "  2) Test Metadata Quality\n" +
-                                    "  3) Test All Data Quality\n" +
-                                    "  4) Test Specific Logger\n" +
-                                    "  5) Test Specific Meter\n" +
+                                    "  2) Fresh Database Initialisation\n" + // Initialise the DB and all its data, reading every available record from CKAN
+                                    "  3) Update Database\n" +
+                                    "  TESTING ONLY: 4) Test Metadata Quality\n" +
+                                    "  TESTING ONLY: 5) Test All Meters\n" +
+                                    "  TESTING ONLY: 6) Test Specific Meter\n" +
                                     "  9) Disable Actions");
                 input = scanner.nextLine();
 
-                if ("1".equals(input)){ // Print Database
-                    database.printDatabase();
+                if ("1".equals(input)){ // Print Database; debug and testing tool
+                    if (database != null) {
+                        database.printDatabase();
+                    }
+                    else {
+                        System.out.println("No DB Initialised");
+                    }
                 }
-                else if ("2".equals(input)){ // Test Metadata for errors
-                    testMetadata();
+                else if ("2".equals(input)){ // Initialise the DB and all its data, reading every available record from CKAN
+
+                    System.out.println("Are you sure? Y/N"); // This process will take a long time and erase all records; hence confirmation
+                    String response = scanner.nextLine();
+                    if (response.toLowerCase().equals("y")){
+                        initDB();
+                    }
+                    else {
+                        break INVALID;
+                    }
                 }
                 else if ("3".equals(input)){
-                    //...
+                    if (database != null) {
+                        updateDB();
+                    }
+                    else {
+                        System.out.println("No DB Initialised");
+                    }
                 }
-                else if ("4".equals(input)){
-                    testLogger("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}");
+                else if ("4".equals(input)){ // Test Metadata for errors
+                    testMetadata();
                 }
-                else if ("5".equals(input)){
-                    testMeter("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}", "D1");
-                    //getMeterJSON("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}", "D1"); //testing only
+                else if ("4".equals(input)){ // Test Metadata for errors
+                    testMetadata();
+                }
+                else if ("5".equals(input)){ // Test all meters records for errors
+                    testAllBMSMeters();
+                }
+                else if ("6".equals(input)){ // Test a specific meter for errors; testing purposes only
+                    testBMSMeter("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}", "D1", "");
                 }
                 else if ("9".equals(input)){ // Disable console inputs
                     System.out.println("Actions no longer available");
@@ -177,49 +194,88 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
     }
 
     /**
-     * Tests the CKAN metadata for errors and adds any detected errors to the sql database
+     * TODO Write Me
      */
-    public void testMetadata() {
+    public void initDB(){
+
+        System.out.println("Initialising Database...");
+
+        /*Initialise Database Schema*/
+        database = new Database(DB_HOST);
+        try {
+            database.executeSQLScript(DB_INIT_FILEPATH);
+        }
+        catch (SQLException e) {
+            System.out.println("Initialising Failed: Could not start DB; check 'eisqualityinit.sql' file and filename");
+            e.printStackTrace();
+        }
+        database.printDatabase(); //debug
+
+        /*Test metadata and meter data on separate threads*/
+        ExecutorService es = Executors.newCachedThreadPool();
+        es.execute(new Thread() { // execute code on new thread
+            public void run() {
+                testAllBMSMeters();
+            }
+        });
+        es.execute(new Thread() { // execute code on new thread
+            public void run() {
+                testMetadata();
+            }
+        });
+
+        es.shutdown();
+        try {
+            es.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+        }
+        catch (InterruptedException e) {
+            System.out.println();
+        }
+
+        System.out.println("Database Initialised!"); // confirmation message
+    }
+
+    /**
+     * TODO Write Me
+     */
+    public void updateDB(){
+        // Update DB Records
+        System.out.println("Not Implemented.");
+    }
+    /**
+     * Tests the CKAN metadata for errors and adds any detected errors to the SQL database
+     */
+    private void testMetadata() {
         System.out.println("Processing Metadata..."); //debug
         String[] loggerCodes, meterCodes;
-        String[] loggerDescs, meterDescs;
 
         /*All logger codes in logger metadata*/
         ArrayList<String> loggerCodeArray = new ArrayList<>();
-        ArrayList<String> loggerDescArray = new ArrayList<>();
         JSONArray loggerList = loggerJSON.getJSONObject("result").getJSONArray("records"); //list of loggers
         for (int i = 0; i < loggerList.length(); i++) { // every logger
-            String name = loggerList.getJSONObject(i).getString("Logger Serial Number"); //store logger code
-            loggerCodeArray.add(name);
-            String desc = loggerList.getJSONObject(i).getString("Description"); //store description
-            loggerDescArray.add(desc);
+            String code = loggerList.getJSONObject(i).getString("Logger Serial Number"); //store logger code
+            loggerCodeArray.add(code);
         }
         loggerCodes = convertToArray(loggerCodeArray); // convert to regular String arrays
-        loggerDescs = convertToArray(loggerDescArray);
 
         /*All logger codes in meter metadata*/
         ArrayList<String> meterArray = new ArrayList<>();
-        ArrayList<String> meterDescArray = new ArrayList<>();
         JSONArray meterList = meterJSON.getJSONObject("result").getJSONArray("records"); //list of meters
         for (int i = 0; i < meterList.length(); i++) { // every meter
-            String name = meterList.getJSONObject(i).getString("Logger Asset Code"); // store logger code
-            meterArray.add(name);
-            String desc = meterList.getJSONObject(i).getString("Description"); //store description
-            meterDescArray.add(desc);
+            String code = meterList.getJSONObject(i).getString("Logger Asset Code"); // store logger code
+            meterArray.add(code);
         }
         meterCodes = convertToArray(meterArray); // convert to regular String arrays
-        meterDescs = convertToArray(meterDescArray);
 
         System.out.println("Loggers Codes: " + loggerCodes.length + ", Meter Codes: " + meterCodes.length); //debug
 
         /*Test every logger in metadata*/
         int errors = 0;
-        int errorID = 1;
 
         for (int i = 0; i < loggerCodes.length; i++){ // for every logger
             boolean errorDetected = false;
 
-            /*Test for loggers without meters*/
+            /*Test for loggers without meters associated with it in the metadata*/
             boolean found = false;
             for (int j = 0; j < meterCodes.length; j++){ // look at every meter
                 if (loggerCodes[i].equals(meterCodes[j])) {
@@ -231,10 +287,8 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                 errorDetected = true;
                 Map<String, String> vals = new HashMap<>();
                 vals.put("error_type", "1"); // Add error to database
-                vals.put("asset_id", Integer.toString(errorID));
-                vals.put("asset_code", "\""+loggerCodes[i]+"\"");
-                vals.put("description", "\""+loggerDescs[i]+"\"");
-                database.addRecord("metadataerrors", vals);
+                vals.put("logger_code", "\""+loggerCodes[i]+"\"");
+                database.addAssetRecord("metadataerrors", vals);
             }
 
             /*Test for loggers with missing data fields (asset code, logger channel, description etc...*/
@@ -242,32 +296,24 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                 errorDetected = true;
                 Map<String, String> vals = new HashMap<>();
                 vals.put("error_type", "2"); // Add error to database
-                vals.put("asset_id", Integer.toString(errorID));
-                vals.put("asset_code", "\""+loggerCodes[i]+"\"");
-                vals.put("description", "\""+loggerDescs[i]+"\"");
-                database.addRecord("metadataerrors", vals);
+                vals.put("logger_code", "\""+loggerCodes[i]+"\"");
+                database.addAssetRecord("metadataerrors", vals);
             }
             if (loggerList.getJSONObject(i).getString("Description").equals("")){ // no description
                 errorDetected = true;
                 Map<String, String> vals = new HashMap<>();
                 vals.put("error_type", "2"); // Add error to database
-                vals.put("asset_id", Integer.toString(errorID));
-                vals.put("asset_code", "\""+loggerCodes[i]+"\"");
-                vals.put("description", "\""+loggerDescs[i]+"\"");
-                database.addRecord("metadataerrors", vals);
+                vals.put("logger_code", "\""+loggerCodes[i]+"\"");
+                database.addAssetRecord("metadataerrors", vals);
             }
 
             /*If an error was found for the logger, add this logger to quality database*/
             if (errorDetected){
                 errors++;
-                errorID++;
                 Map<String, String> vals = new HashMap<>();
+                vals.put("hardware", "\"logger\"");
                 vals.put("logger_code", "\""+loggerCodes[i]+"\"");
-                vals.put("building_code", "\""+loggerList.getJSONObject(i).getString("Building Code")+"\""); // Add error to database
-                vals.put("description", "\""+loggerDescs[i]+"\"");
-                vals.put("additional_loc_info", "\""+loggerList.getJSONObject(i).getString("Additional Location Info")+"\"");
-                vals.put("asset_code", "\""+loggerList.getJSONObject(i).getString("Asset Code")+"\"");
-                database.addRecord("erroneousassets", vals);
+                database.addAssetRecord("erroneousassets", vals);
             }
         }
         System.out.println("Erroneous Loggers: " + errors);
@@ -277,7 +323,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         for (int i = 0; i < meterCodes.length; i++){ // for every meter
             boolean errorDetected = false;
 
-            /*Test for meters without loggers*/
+            /*Test for meters without loggers associated with it in the metadata*/
             boolean found = false;
             for (int j = 0; j < loggerCodes.length; j++){ // look at every logger
                 if (meterCodes[i].equals(loggerCodes[j])) {
@@ -289,27 +335,23 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                 errorDetected = true;
                 Map<String, String> vals = new HashMap<>();
                 vals.put("error_type", "3");
-                vals.put("asset_id", Integer.toString(errorID));
-                vals.put("asset_code", "\""+meterCodes[i]+"\"");
-                vals.put("description", "\""+meterDescs[i]+"\""); //TODO Improve descriptions (account for blanks and expand desc)
-                database.addRecord("metadataerrors", vals); // Add error to database
+                //vals.put("asset_id", Integer.toString(errorID));
+                vals.put("logger_code", "\""+meterCodes[i]+"\"");
+                database.addAssetRecord("metadataerrors", vals); // Add error to database
             }
 
-            /*Test for meters with missing data fields (asset code, logger channel, description etc...*/
+            /* TODO Test for meters with missing data fields (asset code, logger channel, description etc...*/
             //...
 
             /*If an error was found for the meter, add this meter to database*/
             if (errorDetected){
                 errors++;
-                errorID++;
                 Map<String, String> vals = new HashMap<>();
+                vals.put("hardware", "\"meter\"");
                 vals.put("logger_code", "\""+meterCodes[i]+"\""); // Add error to database
                 vals.put("logger_channel", "\""+meterList.getJSONObject(i).getString("Logger Channel")+"\"");
-                vals.put("description", "\""+meterDescs[i]+"\"");
                 vals.put("utility_type", "\""+meterList.getJSONObject(i).getString("Utility Type")+"\"");
-                vals.put("additional_loc_info", "\""+meterList.getJSONObject(i).getString("Additional Location Info")+"\"");
-                vals.put("asset_code", "\""+meterList.getJSONObject(i).getString("Asset Code")+"\"");
-                database.addRecord("erroneousassets", vals);
+                database.addAssetRecord("erroneousassets", vals);
             }
         }
         System.out.println("Erroneous Meters: " + errors);
@@ -317,28 +359,59 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
     }
 
     /**
-     * Tests a BMS / EMS logger for errors and adds any detected errors to the sql database
-     * @param loggerCode Logger's unique code
+     * TODO Write Me
      */
-    public void testLogger(String loggerCode){
-        /*repeatedly test meters from a logger using testMeter method*/
-        List<JSONObject> meterJSON = getMeterJSON(loggerCode, "D1");
-        try {
-            writeFile(meterJSON, "Testing-" + loggerCode);
-        }
-        catch (Exception e) {
-            e.printStackTrace();
+    private void testAllBMSMeters(){
+
+        JSONArray meterList = meterJSON.getJSONObject("result").getJSONArray("records"); //list of meters
+        for (int i = 0; i < meterList.length(); i++) { // for every meter
+
+            String code = meterList.getJSONObject(i).getString("Logger Asset Code"); // logger code
+            String chan = meterList.getJSONObject(i).getString("Logger Channel"); // logger channel
+            String util = meterList.getJSONObject(i).getString("Utility Type"); // utility type
+
+            if (!code.equals("") && !chan.equals("")) { // can only test meter if it has a logger code and channel
+
+                String type = meterList.getJSONObject(i).getString("Classification Group");
+
+                if (type.equals(BMS_CLASSIFICATION_GROUP)) {
+                    testBMSMeter(code, chan, util); // test every meter
+                }
+                else if (type.equals(EMS_CLASSIFICATION_GROUP)){
+                    // TODO Test EMS data readings; the data files in CKAN are nonsensical in terms or relating to the new metadata right now
+                }
+                // TODO Multithreading (if possible, as each process uses a very large qty of heap space for CKAN requests, thread limit may be the answer)
+            }
         }
     }
 
     /**
-     * Tests meter for errors and adds any detected errors to the sql database
+     * Tests a specified meter for errors and adds any detected errors to the sql database
      * @param loggerCode Meters / sensor's logger code
      * @param moduleKey Meter / sensor's module key
+     * @param utilityType --
      */
-    public void testMeter(String loggerCode, String moduleKey){
+    private void testBMSMeter(String loggerCode, String moduleKey, String utilityType){
 
-        List<JSONObject> jsonValues = getMeterJSON(loggerCode, moduleKey); // List of JSON objects for meter readings
+        int errors = 0;
+        boolean errorDetected = false;
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss");
+
+        List<JSONObject> jsonValues = getMeterJSON(loggerCode, moduleKey); // List of JSON objects, representing every meter reading
+
+        /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
+        if (jsonValues.size() == 0){
+
+            try {
+                Date now = new Date(); // use DB time value as current time
+                Timestamp timestamp = new Timestamp(now.getTime());
+                database.addMeterError(9, loggerCode, moduleKey, timestamp); // Write error to DB
+            }
+            catch (Exception e){
+                e.printStackTrace();
+            }
+            return; // return from method; no records to test therefore no need to continue
+        }
 
         /*Sort the meter readings by their timestamp*/
         Collections.sort( jsonValues, new Comparator<JSONObject>() {
@@ -362,22 +435,79 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             }
         });
 
-        /*Debug: print list for verification*/
+        /*Error Tests for Meter:*/
+
+        /*Check whether meter has recent data*/
+        Date now = new Date(); // time now
+        Calendar cal = Calendar.getInstance();
+        cal.setTime(now); // initiate calendar instance with current time
+        cal.add(Calendar.DATE, -2); // subtract 2 days from calender
+        Date dateBefore2Days = cal.getTime(); // new date object representing 2 days ago
         try {
-            writeFile(jsonValues, "Sorted-" + loggerCode);
+
+            Date mostRecentMeterReading = dateFormat.parse(jsonValues.get(0).getString("timestamp").replace("T", " ")); // Must remove the 'T' from CKAN response for string to be parsable
+
+            if (mostRecentMeterReading.compareTo(dateBefore2Days) < 0){ // if most recent meter reading is more than 2 days old
+                errors++;
+                errorDetected = true;
+                try {
+                    String time = jsonValues.get(0).getString("timestamp").replace("T", " ");
+                    Date date = dateFormat.parse(time);
+                    Timestamp timestamp = new java.sql.Timestamp(date.getTime());
+                    database.addMeterError(6, loggerCode, moduleKey, timestamp);
+                }
+                catch (Exception e){
+                    e.printStackTrace();
+                }
+            }
         }
-        catch (Exception e) {
+        catch (Exception e){
+            //System.out.println("Failed to parse meter's timestamp to Date format");
             e.printStackTrace();
         }
 
-        /*Check whether meter has recent data*/
-        //...
-
         /*Check Quality of reading: -ve data, no data etc.*/
-        //...
+        for (int i = 0; i < jsonValues.size(); i++){ // for every CKAN record
+            String readS = jsonValues.get(i).getString("param_value");
+            double reading = Double.parseDouble(readS); // meter reading from every CKAN record
 
-        /*Check time interval of readings is correct*/
+            /*Test for negative data readings*/
+            if (reading < 0){ // no readings should be -ve
+                errors++;
+                errorDetected = true;
+                try {
+                    String timeS = jsonValues.get(i).getString("timestamp").replace("T", " "); // Must remove the 'T' from CKAN response for string to be parsable
+                    Date date = dateFormat.parse(timeS);
+                    Timestamp timestamp = new Timestamp(date.getTime());
+                    database.addMeterError(6, loggerCode, moduleKey, timestamp);
+                }
+                catch (Exception e){
+                    e.printStackTrace();
+                }
+            }
+
+            /*Test for strange data readings, based on utility type*/
+            if (utilityType.equals("insert utility type")){ // if utility type is specified
+                // test for different utility types
+                // error_type for non-normal data reading = 7
+            }
+        }
+
+        /*Check time interval of readings are correct*/
         //...
+        // error_type for non-normal data reading = 8
+
+        System.out.println("Meter " + loggerCode +"-" + moduleKey + " Errors: " + errors); // debug
+
+        /*If an error was found for the meter, add this meter to database assets*/
+        if (errorDetected){
+            Map<String, String> vals = new HashMap<>();
+            vals.put("hardware", "\"meter\"");
+            vals.put("logger_code", "\""+loggerCode+"\""); // Add error to database
+            vals.put("logger_channel", "\""+moduleKey+"\"");
+            vals.put("utility_type", "\""+utilityType+"\"");
+            database.addAssetRecord("erroneousassets", vals);
+        }
     }
 
     /**
@@ -387,7 +517,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
      * @param moduleKey Meter / sensor's module key
      * @return List of all data for the specified meter
      */
-    public List<JSONObject> getMeterJSON(String loggerCode, String moduleKey){
+    private List<JSONObject> getMeterJSON(String loggerCode, String moduleKey){
 
         readingJSON = null; // reset JSONObject for reading; precaution
         List<JSONObject> jsonValues = new ArrayList<>();
@@ -406,7 +536,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                         if(fileName.contains("2017") || fileName.equals("bms-dec-2016")) { //TODO Account for older 2016 data
                             //fileList.add(bmsList.getJSONObject(i).getString("id"));
                             fileMap.put(bmsList.getJSONObject(i).getString("id"), fileName);
-                            System.out.println("Added: " + fileName + ", " + bmsList.getJSONObject(i).getString("id")); //debug
+                            //System.out.println("Added: " + fileName + ", " + bmsList.getJSONObject(i).getString("id")); //debug
                         }
                     }
                 }
@@ -445,12 +575,12 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             readingJSON.accumulate("files", fileMap); // append list of files to JSON
 
             /*Wait for all thread to end*/
-            System.out.println("Waiting on Threads for " + loggerCode + "-" + moduleKey + "...");
+            //System.out.println("Waiting on Threads for " + loggerCode + "-" + moduleKey + "...");
             es.shutdown();
             es.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
-            System.out.println("All Threads Complete for " + loggerCode + "-" + moduleKey);
+            System.out.println("All records read: " + loggerCode + "-" + moduleKey);
 
-            writeFile(readingJSON, loggerCode+"-"+moduleKey); //Debug; output result to file for verification
+//            writeFile(readingJSON, loggerCode+"-"+moduleKey); //Debug; output result to file for verification
 
             /*Add each JSONObject from meter into a list (which will later be returned)*/
             JSONArray meterArray = readingJSON.getJSONArray("records");
