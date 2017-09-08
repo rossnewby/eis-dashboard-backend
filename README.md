@@ -33,3 +33,11 @@ mysqlpass=<insert your mysql root password; default = "">
 <img align="left" height="100"  src="https://avatars1.githubusercontent.com/u/1630326?v=4&s=400"/>
 
 The CKAN basic authentication username and password can be found through lancaster EIS staff and the private project repository. Authentication credentials should not be shared or uploaded to the public git repository; please take extra care when creting your config file. Your API key can be found through the [data portal](https://ckan.lancaster.ac.uk), you must login on request an account through ISS.
+
+## Authors
+
+> **Ross Newby** - *Initial Work* - [rossnewby](https://github.com/rossnewby)
+
+> **Oliver Bates** - *Project Support* - [oscarechobravo](https://github.com/oscarechobravo)
+
+See also the list of [contributors](https://github.com/rossnewby/eis-dashboard-backend/contributors) who participated in this project.
