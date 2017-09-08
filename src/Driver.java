@@ -9,6 +9,7 @@ import java.rmi.*;
 import java.rmi.server.UnicastRemoteObject;
 import java.sql.SQLException;
 import java.sql.Timestamp;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
@@ -20,7 +21,7 @@ import java.util.concurrent.TimeUnit;
  *
  * @Author Ross Newby
  */
-public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
+public class Driver {
 
     /*Variables used for metadata and other JSONs*/
     private JSONObject packageJSON = null; // JSON objects for all metadata
@@ -32,9 +33,9 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
     /*Used to access CKAN and other files, if paths / names change; amend them here*/
     private static final String DB_INIT_FILEPATH = "src/eisqualityinit.sql"; // mysql database initialisation file
     private static final String DB_HOST = "jdbc:mysql://localhost:3306/eisquality";
-    private static final String METER_SENSOR_METADATA_NAME = "Planon metadata - Meters Sensors"; // names of metadata files in CKAN
-    private static final String LOGGER_CONTROLLER_METADATA_NAME = "Planon metadata - Loggers Controllers";
-    private static final String BMS_CLASSIFICATION_GROUP = "Energy sensor"; // identifier for EMS records
+    private static final String METER_METADATA_NAME = "Planon metadata - Meters Sensors"; // names of metadata files in CKAN
+    private static final String LOGGER_METADATA_NAME = "Planon metadata - Loggers Controllers";
+    private static final String BMS_CLASSIFICATION_GROUP = "Energy sensor"; // identifier for EMS records in the metadata
     private static final String EMS_CLASSIFICATION_GROUP = "Energy meter"; // identifier for BMS records
 
     private Database database = null; // mysql database
@@ -44,10 +45,8 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
     /**
      * Initialises a server by reading basic authentication details and API data from config file. Also queries CKAN datastore for all
      * metadata and returns once JSON objects have been read completely. EIS Quality database in MySQL is initialised.
-     * @throws RemoteException Problem during remote procedure call
-     * @throws FileNotFoundException If config.properties file not found in root directory
      */
-    public ServerImpl() throws RemoteException{
+    public Driver() {
 
         /*Get CKAN metadata*/
         try {
@@ -55,7 +54,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             packageJSON = ckanReq.requestJSON();
             JSONArray packageList = packageJSON.getJSONObject("result").getJSONArray("resources"); // Array of resource names available in CKAN
 
-            String lookingFor = METER_SENSOR_METADATA_NAME; // search for meter / sensor metadata
+            String lookingFor = METER_METADATA_NAME; // search for meter / sensor metadata
             for (int i = 0; i < packageList.length(); i++) { // for every package name in CKAN
                 if (packageList.getJSONObject(i).getString("name").equals(lookingFor)){ // if package is meter / sensor data
                     // Get package ID number and use this in another CKAN request for meter / sensor metadata
@@ -65,17 +64,17 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                             try {
                                 CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
                                 meterJSON = ckanReq.requestJSON();
-                                //meterCodes = getSpecified(meterJSON, "Logger Asset Code");
                             }
                             catch (Exception e){
-                                e.printStackTrace();
+                                System.out.print("Setup Failed: Could not read Meter metadata from CKAN");
+                                return;
                             }
                         }
                     };
                     meterThread.start();
                 }
             }
-            lookingFor = LOGGER_CONTROLLER_METADATA_NAME; // Search for logger / controller metadata
+            lookingFor = LOGGER_METADATA_NAME; // Search for logger / controller metadata
             for (int i = 0; i < packageList.length(); i++) { // for every package name in CKAN
                 if (packageList.getJSONObject(i).getString("name").equals(lookingFor)){ // if package is loggers / controllers
                     // Get package ID number and use this in another CKAN request for logger / controller metadata
@@ -85,10 +84,10 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                             try {
                                 CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\"" + id + "\"");
                                 loggerJSON = ckanReq.requestJSON();
-                                //loggerCodes = getSpecified(loggerJSON, "Logger Serial Number");
                             }
                             catch (Exception e){
-                                e.printStackTrace();
+                                System.out.print("Setup Failed: Could not read Logger metadata from CKAN");
+                                return;
                             }
                         }
                     };
@@ -96,13 +95,9 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                 }
             }
         }
-        catch (NullPointerException e){
-            System.out.println("Error Processing JSON String: CKAN Response 'null'");
-            e.printStackTrace();
-        }
         catch (Exception e){
-            System.out.println("Error Processing JSON String:");
-            e.printStackTrace();
+            System.out.print("Setup Failed: Could not read Planon data from CKAN");
+            return;
         }
 
         /*Join threads; threads must be complete when constructor ends*/
@@ -114,9 +109,6 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             System.out.println("Metadata Threads Interrupted:");
             e.printStackTrace();
         }
-
-        /*Initialise Database*/
-        // initDB(); TODO Uncomment when finished
 
         System.out.println("Setup Complete!"); // confirmation message
         serverMenu();
@@ -130,15 +122,11 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         while (!"9".equals(input)) {
             INVALID:
             {
-                System.out.println("-- Actions -- e to quit");
+                System.out.println("-- Actions --");
                 System.out.println("Select an Action:\n" + // Menu Options
                                     "  1) Print Database\n" +
                                     "  2) Fresh Database Initialisation\n" + // Initialise the DB and all its data, reading every available record from CKAN
-                                    "  3) Update Database\n" +
-                                    "  TESTING ONLY: 4) Test Metadata Quality\n" +
-                                    "  TESTING ONLY: 5) Test All Meters\n" +
-                                    "  TESTING ONLY: 6) Test Specific Meter\n" +
-                                    "  9) Disable Actions");
+                                    "  3) Update Database\n" );
                 input = scanner.nextLine();
 
                 if ("1".equals(input)){ // Print Database; debug and testing tool
@@ -151,7 +139,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                 }
                 else if ("2".equals(input)){ // Initialise the DB and all its data, reading every available record from CKAN
 
-                    System.out.println("Are you sure? Y/N"); // This process will take a long time and erase all records; hence confirmation
+                    System.out.println("This will completely re-populate the DB. Are you sure? Y/N"); // This process will take a long time and erase all records; hence confirmation
                     String response = scanner.nextLine();
                     if (response.toLowerCase().equals("y")){
                         initDB();
@@ -168,21 +156,6 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                         System.out.println("No DB Initialised");
                     }
                 }
-                else if ("4".equals(input)){ // Test Metadata for errors
-                    testMetadata();
-                }
-                else if ("4".equals(input)){ // Test Metadata for errors
-                    testMetadata();
-                }
-                else if ("5".equals(input)){ // Test all meters records for errors
-                    testAllBMSMeters();
-                }
-                else if ("6".equals(input)){ // Test a specific meter for errors; testing purposes only
-                    testBMSMeter("{05937EE0-58E6-42F3-B6BD-A180D9634B6C}", "D1", "");
-                }
-                else if ("9".equals(input)){ // Disable console inputs
-                    System.out.println("Actions no longer available");
-                }
                 else if ("e".equals(input)) { // Close application
                     exit();
                 }
@@ -194,9 +167,11 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
     }
 
     /**
-     * TODO Write Me
+     * Perform a full initialisation of the EIS quality database; creating the database schema itself, before analysing every data
+     * record in CKAN and populating the database with found errors
+     * @return Returns 1 if script was successful, 0 if error occurred
      */
-    public void initDB(){
+    public int initDB() {
 
         System.out.println("Initialising Database...");
 
@@ -205,9 +180,9 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         try {
             database.executeSQLScript(DB_INIT_FILEPATH);
         }
-        catch (SQLException e) {
-            System.out.println("Initialising Failed: Could not start DB; check 'eisqualityinit.sql' file and filename");
-            e.printStackTrace();
+        catch (Exception e) {
+            System.out.println("Initialising Failed: Could not start DB; check "+ DB_INIT_FILEPATH);
+            return 0;
         }
         database.printDatabase(); //debug
 
@@ -215,7 +190,7 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         ExecutorService es = Executors.newCachedThreadPool();
         es.execute(new Thread() { // execute code on new thread
             public void run() {
-                testAllBMSMeters();
+                testAllMeters();
             }
         });
         es.execute(new Thread() { // execute code on new thread
@@ -229,10 +204,12 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             es.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
         }
         catch (InterruptedException e) {
-            System.out.println();
+            System.out.println("Initialising Failed: Data analysis was interrupted");
+            return 0;
         }
 
         System.out.println("Database Initialised!"); // confirmation message
+        return 1;
     }
 
     /**
@@ -242,12 +219,17 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         // Update DB Records
         System.out.println("Not Implemented.");
     }
+
     /**
      * Tests the CKAN metadata for errors and adds any detected errors to the SQL database
+     * @returns The number of errors found
      */
-    private void testMetadata() {
+    private int testMetadata() {
         System.out.println("Processing Metadata..."); //debug
         String[] loggerCodes, meterCodes;
+
+        /*First; must get all logger codes from both meter and logger metadata. This is used later to test whether loggers have meters
+        * associated with them in the metadata and visa-versa*/
 
         /*All logger codes in logger metadata*/
         ArrayList<String> loggerCodeArray = new ArrayList<>();
@@ -267,10 +249,8 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         }
         meterCodes = convertToArray(meterArray); // convert to regular String arrays
 
-        System.out.println("Loggers Codes: " + loggerCodes.length + ", Meter Codes: " + meterCodes.length); //debug
-
-        /*Test every logger in metadata*/
         int errors = 0;
+        /*Test every logger in metadata*/
 
         for (int i = 0; i < loggerCodes.length; i++){ // for every logger
             boolean errorDetected = false;
@@ -285,41 +265,32 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             }
             if (!found){
                 errorDetected = true;
-                Map<String, String> vals = new HashMap<>();
-                vals.put("error_type", "1"); // Add error to database
-                vals.put("logger_code", "\""+loggerCodes[i]+"\"");
-                database.addAssetRecord("metadataerrors", vals);
+                errors++;
+                database.addError(1, loggerCodes[i], "");
             }
 
             /*Test for loggers with missing data fields (asset code, logger channel, description etc...*/
             if (loggerList.getJSONObject(i).getString("Building Code").equals("")){ // no building code
                 errorDetected = true;
-                Map<String, String> vals = new HashMap<>();
-                vals.put("error_type", "2"); // Add error to database
-                vals.put("logger_code", "\""+loggerCodes[i]+"\"");
-                database.addAssetRecord("metadataerrors", vals);
+                errors++;
+                database.addError(2, loggerCodes[i], "");
             }
             if (loggerList.getJSONObject(i).getString("Description").equals("")){ // no description
                 errorDetected = true;
-                Map<String, String> vals = new HashMap<>();
-                vals.put("error_type", "2"); // Add error to database
-                vals.put("logger_code", "\""+loggerCodes[i]+"\"");
-                database.addAssetRecord("metadataerrors", vals);
+                errors++;
+                database.addError(3, loggerCodes[i], "");
             }
 
             /*If an error was found for the logger, add this logger to quality database*/
             if (errorDetected){
                 errors++;
-                Map<String, String> vals = new HashMap<>();
-                vals.put("hardware", "\"logger\"");
-                vals.put("logger_code", "\""+loggerCodes[i]+"\"");
-                database.addAssetRecord("erroneousassets", vals);
+                database.addAsset("logger", loggerCodes[i]);
             }
         }
         System.out.println("Erroneous Loggers: " + errors);
 
         /*Test every meter in metadata*/
-        errors = 0;
+
         for (int i = 0; i < meterCodes.length; i++){ // for every meter
             boolean errorDetected = false;
 
@@ -333,37 +304,40 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             }
             if (!found){
                 errorDetected = true;
-                Map<String, String> vals = new HashMap<>();
-                vals.put("error_type", "3");
-                //vals.put("asset_id", Integer.toString(errorID));
-                vals.put("logger_code", "\""+meterCodes[i]+"\"");
-                database.addAssetRecord("metadataerrors", vals); // Add error to database
+                errors++;
+                database.addError(10, meterCodes[i], "");
             }
 
-            /* TODO Test for meters with missing data fields (asset code, logger channel, description etc...*/
-            //...
+            /*Test for meters with missing data fields (asset code, logger channel, description etc...*/
+            if (meterList.getJSONObject(i).getString("Asset Code").equals("")){
+                errorDetected = true;
+                errors++;
+                database.addError(11, meterCodes[i], "");
+            }
+            if (meterList.getJSONObject(i).getString("Description").equals("")){
+                errorDetected = true;
+                errors++;
+                database.addError(12, meterCodes[i], "");
+            }
 
             /*If an error was found for the meter, add this meter to database*/
             if (errorDetected){
-                errors++;
-                Map<String, String> vals = new HashMap<>();
-                vals.put("hardware", "\"meter\"");
-                vals.put("logger_code", "\""+meterCodes[i]+"\""); // Add error to database
-                vals.put("logger_channel", "\""+meterList.getJSONObject(i).getString("Logger Channel")+"\"");
-                vals.put("utility_type", "\""+meterList.getJSONObject(i).getString("Utility Type")+"\"");
-                database.addAssetRecord("erroneousassets", vals);
+                database.addAsset("meter", meterCodes[i], meterList.getJSONObject(i).getString("Logger Channel"), meterList.getJSONObject(i).getString("Utility Type"));
             }
         }
         System.out.println("Erroneous Meters: " + errors);
         System.out.println("Metadata Processing Successful");
+        return errors;
     }
 
     /**
-     * TODO Write Me
+     * Test every meter for EMS and BMS for errors
+     * @return The number of meters which could not be processed for errors
      */
-    private void testAllBMSMeters(){
+    private int testAllMeters(){
 
         JSONArray meterList = meterJSON.getJSONObject("result").getJSONArray("records"); //list of meters
+        int toReturn = 0;
         for (int i = 0; i < meterList.length(); i++) { // for every meter
 
             String code = meterList.getJSONObject(i).getString("Logger Asset Code"); // logger code
@@ -374,42 +348,55 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
 
                 String type = meterList.getJSONObject(i).getString("Classification Group");
 
-                if (type.equals(BMS_CLASSIFICATION_GROUP)) {
-                    testBMSMeter(code, chan, util); // test every meter
+                if (type.equals(BMS_CLASSIFICATION_GROUP)) { // if the meter is from BMS
+                    try {
+                        List<JSONObject> json = getBMSMeterJSON(code, chan); // List of JSON objects, representing every meter reading
+                        testMeter(json, util); // test every meter
+                    }
+                    catch (Exception e){
+                        toReturn++;
+                        // Nothing more; continue processing next meter
+                    }
                 }
-                else if (type.equals(EMS_CLASSIFICATION_GROUP)){
-                    // TODO Test EMS data readings; the data files in CKAN are nonsensical in terms or relating to the new metadata right now
+                else if (type.equals(EMS_CLASSIFICATION_GROUP)){ // if the meter is from EMS
+                    try {
+                        List<JSONObject> json = getBMSMeterJSON(code, chan); // List of JSON objects, representing every meter reading
+                        testMeter(json, util); // test every meter
+                    }
+                    catch (Exception e){
+                        toReturn++;
+                        // Nothing more; continue processing next meter
+                    }
                 }
                 // TODO Multithreading (if possible, as each process uses a very large qty of heap space for CKAN requests, thread limit may be the answer)
             }
+            else { // meter doesn't have a code and channel
+                toReturn++;
+            }
         }
+        return toReturn; // number of meters which were not tested
     }
 
     /**
-     * Tests a specified meter for errors and adds any detected errors to the sql database
-     * @param loggerCode Meters / sensor's logger code
-     * @param moduleKey Meter / sensor's module key
-     * @param utilityType --
+     * Tests a specified BMS meter for errors and adds any detected errors to the sql database
+     * @param jsonValues List of JSON objects representing every meter reading
+     * @param utilityType
      */
-    private void testBMSMeter(String loggerCode, String moduleKey, String utilityType){
+    private void testMeter(List<JSONObject> jsonValues, String utilityType){
 
         int errors = 0;
         boolean errorDetected = false;
         SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss");
 
-        List<JSONObject> jsonValues = getMeterJSON(loggerCode, moduleKey); // List of JSON objects, representing every meter reading
+        String loggerCode = jsonValues.get(0).getString("Logger Asset Code");
+        String moduleKey = jsonValues.get(0).getString("Logger Channel");
 
         /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
         if (jsonValues.size() == 0){
 
-            try {
-                Date now = new Date(); // use DB time value as current time
-                Timestamp timestamp = new Timestamp(now.getTime());
-                database.addMeterError(9, loggerCode, moduleKey, timestamp); // Write error to DB
-            }
-            catch (Exception e){
-                e.printStackTrace();
-            }
+            Date now = new Date(); // use DB time value as current time
+            Timestamp timestamp = new Timestamp(now.getTime());
+            database.addError(20, loggerCode, moduleKey, timestamp); // Write error to DB
             return; // return from method; no records to test therefore no need to continue
         }
 
@@ -450,15 +437,8 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             if (mostRecentMeterReading.compareTo(dateBefore2Days) < 0){ // if most recent meter reading is more than 2 days old
                 errors++;
                 errorDetected = true;
-                try {
-                    String time = jsonValues.get(0).getString("timestamp").replace("T", " ");
-                    Date date = dateFormat.parse(time);
-                    Timestamp timestamp = new java.sql.Timestamp(date.getTime());
-                    database.addMeterError(6, loggerCode, moduleKey, timestamp);
-                }
-                catch (Exception e){
-                    e.printStackTrace();
-                }
+                Timestamp timestamp = new java.sql.Timestamp(mostRecentMeterReading.getTime());
+                database.addError(21, loggerCode, moduleKey, timestamp);
             }
         }
         catch (Exception e){
@@ -479,45 +459,40 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
                     String timeS = jsonValues.get(i).getString("timestamp").replace("T", " "); // Must remove the 'T' from CKAN response for string to be parsable
                     Date date = dateFormat.parse(timeS);
                     Timestamp timestamp = new Timestamp(date.getTime());
-                    database.addMeterError(6, loggerCode, moduleKey, timestamp);
+                    database.addError(22, loggerCode, moduleKey, timestamp);
                 }
-                catch (Exception e){
+                catch (ParseException e){
                     e.printStackTrace();
                 }
             }
 
             /*Test for strange data readings, based on utility type*/
             if (utilityType.equals("insert utility type")){ // if utility type is specified
-                // test for different utility types
-                // error_type for non-normal data reading = 7
+                // TODO test for different utility types
+                // error_type for non-normal data reading = 23
             }
         }
 
         /*Check time interval of readings are correct*/
-        //...
-        // error_type for non-normal data reading = 8
+        // TODO test time intervals
+        // error_type for non-normal data reading = 24
 
         System.out.println("Meter " + loggerCode +"-" + moduleKey + " Errors: " + errors); // debug
 
         /*If an error was found for the meter, add this meter to database assets*/
         if (errorDetected){
-            Map<String, String> vals = new HashMap<>();
-            vals.put("hardware", "\"meter\"");
-            vals.put("logger_code", "\""+loggerCode+"\""); // Add error to database
-            vals.put("logger_channel", "\""+moduleKey+"\"");
-            vals.put("utility_type", "\""+utilityType+"\"");
-            database.addAssetRecord("erroneousassets", vals);
+            database.addAsset("meter", loggerCode, moduleKey, utilityType);
         }
     }
 
     /**
-     * Convert all data for a single meter / sensor to a single list of JSON objects.
+     * Convert all data for a single BMS meter to a single list of JSON objects.
      * Both the logger code and module key make a unique identifier for the Meter
      * @param loggerCode Meters / sensor's logger code
-     * @param moduleKey Meter / sensor's module key
-     * @return List of all data for the specified meter
+     * @param moduleKey Meter / sensor's module key aka logger channel
+     * @return List of all data for the specified BMS meter
      */
-    private List<JSONObject> getMeterJSON(String loggerCode, String moduleKey){
+    private List<JSONObject> getBMSMeterJSON(String loggerCode, String moduleKey){
 
         readingJSON = null; // reset JSONObject for reading; precaution
         List<JSONObject> jsonValues = new ArrayList<>();
@@ -527,17 +502,13 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/package_show?id=bms");
             JSONObject bmsJSON = ckanReq.requestJSON();
             JSONArray bmsList = bmsJSON.getJSONObject("result").getJSONArray("resources"); // Array of bms files in CKAN (JSON Objects)
-            //ArrayList<String> fileList = new ArrayList<>(); // list of BMS filenames in CKAN
             Map<String, String> fileMap = new HashMap<>();
             for (int i = 0; i < bmsList.length(); i++){ // each BMS file
                 String fileName = bmsList.getJSONObject(i).getString("name"); // next BMS filename
-                if (!fileName.equals("bmsdevicemeta")) {
-                    if (!fileName.equals("bmsmodulemeta")) {// don't include bms metadata in list
-                        if(fileName.contains("2017") || fileName.equals("bms-dec-2016")) { //TODO Account for older 2016 data
-                            //fileList.add(bmsList.getJSONObject(i).getString("id"));
-                            fileMap.put(bmsList.getJSONObject(i).getString("id"), fileName);
-                            //System.out.println("Added: " + fileName + ", " + bmsList.getJSONObject(i).getString("id")); //debug
-                        }
+                if (!fileName.equals("bmsdevicemeta") && !fileName.equals("bmsmodulemeta")){ // don't include bms metadata in list
+
+                    if(fileName.contains("2017") || fileName.equals("bms-dec-2016")) { //TODO Account for older 2016 data
+                        fileMap.put(bmsList.getJSONObject(i).getString("id"), fileName);
                     }
                 }
             }
@@ -580,8 +551,6 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             es.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
             System.out.println("All records read: " + loggerCode + "-" + moduleKey);
 
-//            writeFile(readingJSON, loggerCode+"-"+moduleKey); //Debug; output result to file for verification
-
             /*Add each JSONObject from meter into a list (which will later be returned)*/
             JSONArray meterArray = readingJSON.getJSONArray("records");
             for (int i = 1; i < meterArray.length(); i++) { //TODO change looping if taking the slower (but neater) approach above
@@ -592,8 +561,24 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
             }
         }
         catch (Exception e){
-            e.printStackTrace();
+            //e.printStackTrace();
         }
+        return jsonValues; // Returns list of JSON objects for all meter readings
+    }
+
+    /**
+     * Convert all data for a single EMS meter to a single list of JSON objects.
+     * @param loggerCode Meters / sensor's logger code
+     * @param moduleKey Meter / sensor's module key aka logger channel
+     * @return List of all data for the specified EMS meter
+     */
+    public List<JSONObject> getEMSMeterJSON(String loggerCode, String moduleKey){
+
+        readingJSON = null; // reset JSONObject for reading; precaution
+        List<JSONObject> jsonValues = new ArrayList<>();
+
+        //...
+
         return jsonValues; // Returns list of JSON objects for all meter readings
     }
 
@@ -685,4 +670,12 @@ public class ServerImpl extends UnicastRemoteObject implements ServerInterface {
         System.out.println("Exiting...");
         System.exit(1);
     }
+
+    public static void main (String args []){
+
+        System.out.println("Java Version: " + System.getProperty("java.version"));
+        System.out.println("Running...");
+        new Driver();
+    }
+
 }

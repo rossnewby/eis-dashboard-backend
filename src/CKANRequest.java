@@ -1,48 +1,42 @@
 import com.sun.org.apache.xerces.internal.impl.dv.util.Base64;
-import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 
 import javax.net.ssl.HttpsURLConnection;
-import java.io.BufferedReader;
-import java.io.FileNotFoundException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.rmi.RemoteException;
 import java.util.Properties;
 
 /**
- * Class for submitting and receiving CKAN Requests
- *
+ * A Class for submitting CKAN HTTP Requests; A config.properties file must be specified, containing a CKAN API key ('apikey'), as well as
+ * a username ('apiuser') and password ('apipass') for basic authentication.
  * @Author Ross Newby
  */
 public class CKANRequest {
 
     private URL url = null;
-    private String propertiesFileName = "config.properties";
+    private static final String PROPERTIES_FILENAME = "config.properties";
     private String apikey = null;
     private String apiuser = null;
     private String apipass = null;
 
-    private static final int CHUNK_SIZE = 50000;
-
     /**
-     *
-     * @param url
+     * Initialise a CKAN request for a specified URL
+     * @param url The URL address of the CKAN request; works with or without 'https://'
+     * @throws MalformedURLException The specified CKAN URL was not valid
+     * @throws FileNotFoundException A file names config.properties was not found in the class path
      */
-    public CKANRequest(String url) throws MalformedURLException{
+    public CKANRequest(String url) throws MalformedURLException, FileNotFoundException{
 
         /*Read configuration file; populate variables*/
         try {
             Properties prop = new Properties();
-            InputStream in = getClass().getClassLoader().getResourceAsStream(propertiesFileName);
+            InputStream in = getClass().getClassLoader().getResourceAsStream(PROPERTIES_FILENAME);
 
             if (in != null) {
                 prop.load(in);
             } else {
-                throw new FileNotFoundException("'" + propertiesFileName + "' not found in classpath");
+                throw new FileNotFoundException("'" + PROPERTIES_FILENAME + "' not found in classpath");
             }
 
             apikey = prop.getProperty("apikey");
@@ -51,9 +45,8 @@ public class CKANRequest {
 
             in.close();
         }
-        catch (Exception e){
-            System.out.println("Error Reading Configuration File:");
-            e.printStackTrace();
+        catch (IOException e){
+            // System.out.println("Error Reading Configuration File: "+ PROPERTIES_FILENAME);
         }
 
         /*appends 'https://' to URL if needed*/
@@ -61,77 +54,41 @@ public class CKANRequest {
             this.url = url.contains("https://") ? new URL(url) : new URL("https://" + url);
         }
         catch (Exception e){
-            throw new MalformedURLException("Error Reading input URL");
+            throw new MalformedURLException(url +" is not a valid URL string");
         }
     }
 
     /**
-     * Submit CKAN HTTP request with automatic basic authentication and API header; specified by config file
-     * @return Returns the CKAN response as a JSONObject
-     * @throws RemoteException Problem with remote procedure call
+     * Submit the CKAN HTTP request and automatically parse the return statement to JSON format
+     * @return The CKAN response as a JSONObject
+     * @throws IOException When CKAN connection could not be established
      */
-    public JSONObject requestJSON() throws RemoteException{
+    public JSONObject requestJSON() throws IOException{
 
-        JSONObject ret = null;
-
-        /*parse return string to a JSON object*/
-        try {
-            String response = requestString(url.toString());
-            ret = new JSONObject(response);
-            //System.out.println("CKAN Successful: " + url); // debug
-        }
-
-        catch (Exception e){
-            System.out.println("CKAN Request Error for " + url);
-            //e.printStackTrace();
-        }
-
+        String response = requestString();
+        JSONObject ret = new JSONObject(response);
         return ret;
     }
 
     /**
-     *
-     * @param url
-     * @return
-     * @throws RemoteException
+     * Submit the CKAN HTTP request
+     * @return The CKAN response as  String
+     * @throws IOException When CKAN connection could not be established
      */
-    public JSONObject ckanRequestLong(String url) throws RemoteException {
+    public String requestString() throws IOException{
 
-        JSONObject ret;
-        int counter = 0;
-
-        String newURLString = url + "&offset=" + counter + "&limit=" + CHUNK_SIZE;
-        String current = requestString(newURLString);
-
-        ret = new JSONObject(current); // parse return string to a JSON object
-        int total = ret.getJSONObject("result").getInt("total");
-        counter =+ CHUNK_SIZE;
-
-        do {
-            newURLString = url + "&offset=" + counter + "&limit=" + CHUNK_SIZE;
-            current = requestString(newURLString);
-
-            JSONObject currentJSON = new JSONObject(current);
-            JSONArray resultList = currentJSON.getJSONObject("result").getJSONArray("records");
-            for (int i = 0; i < resultList.length(); i++) {
-                ret.accumulate("records", resultList.getJSONObject(i));
-            }
-            counter =+ CHUNK_SIZE;
-        }
-        while (counter <= total);
-
-        return ret;
+        return requestString(this.url.toString());
     }
 
     /**
-     * Submit CKAN HTTP request with automatic basic authentication and API header; specified by config file
+     * Facilitates public methods by submitting a CKAN HTTP request with automatic basic authentication
+     * and API header specified by config file
      * @return Returns the CKAN response as String
-     * @throws RemoteException Problem with remote procedure call
+     * @throws IOException When CKAN connection could not be established
      */
-    public String requestString(String url) throws RemoteException {
+    private String requestString(String url) throws IOException{
 
-        StringBuffer response = null;
-        //System.out.println("CKAN Requesting: " + url.toString()); // debug
+        StringBuffer response;
         try {
             URL newURL = new URL(url);
             HttpsURLConnection con = (HttpsURLConnection) newURL.openConnection();
@@ -154,19 +111,10 @@ public class CKANRequest {
             in.close(); //close connections
             con.disconnect();
         }
-        catch (Exception e) {
-            System.out.print("CKAN Connection Error: ");
-            if (response == null){ // no response from CKAN with specified URL
-                //throw new RemoteException("CKAN Response 'null'");
-                System.out.println("CKAN Response 'null' for " + this.url);
-                return "";
-            }
-            else {
-                System.out.println(this.url);
-            }
-            //e.printStackTrace();
+        catch (MalformedURLException e){
+            System.out.print("Could not read: "+ this.url);
+            return "";
         }
-
         return response.toString(); // returns StringBuffer as String
     }
 }

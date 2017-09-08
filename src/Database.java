@@ -1,12 +1,9 @@
 import java.io.*;
 import java.sql.*;
-import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.Date;
 
 /**
- * Class used for manipulating a MySQL database
- *
+ * Class used for adding records to the EIS quality assurance database in MySQL
  * @Author Ross Newby
  */
 public class Database {
@@ -14,16 +11,20 @@ public class Database {
     private static String URL = "not set";
     private static String USER = "not set";
     private static String PASSWORD = "not set";
+
+    private static String ASSET_DB_NAME = "erroneousassets";
+    private static String ERROR_DB_NAME = "errors";
+
     static private final int PAD_SIZE = 30;
 
     private Connection con; // mysql DB connection
     private Statement st;
     private ResultSet rs;
 
-    public Database(String url){
+    public Database(String hostURL){
 
         /*Read configuration file; populate variables*/
-        this.URL = url;
+        this.URL = hostURL;
         try {
             Properties prop = new Properties();
             String propFileName = "config.properties";
@@ -57,17 +58,22 @@ public class Database {
     }
 
     /**
-     * Adds a record to the database by constructing an executing an SQL statement
-     * @param tableName Name of mysql table to add values in
-     * @param values Values to insert; must be comma separated ie 'value1, value2, valueN'
+     * Adds a record to the erroneous asset table in the EIS quality database
+     * @param ware Value to insert into hardware field
+     * @param logCode Value to insert into logger code field
+     * @param logChan Value to insert into logger channel field
+     * @param util Value to insert into utility type field
      */
-    public void addAssetRecord(String tableName, String values){
-
+    public void addAsset(String ware, String logCode, String logChan, String util){
         try {
-            /*Construct SQL statement based on input parameters*/
-            String query = ("INSERT INTO "+ tableName + " VALUES (default, " + values + ")");
-            //System.out.println("Executing >> " + query); //debug
-            st.executeUpdate(query);
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ASSET_DB_NAME+" (hardware, logger_code, logger_channel, utility_type) VALUES(?, ?, ?, ?) ON DUPLICATE KEY UPDATE id = id");
+            stmt.setString(1, ware); // specify each parameter ('?') in the query
+            stmt.setString(2,logCode);
+            stmt.setString(3, logChan);
+            stmt.setString(4, util);
+
+            int i = stmt.executeUpdate();
+            System.out.println(i +" record(s) added to "+ ASSET_DB_NAME);
         }
         catch (Exception e){
             e.printStackTrace();
@@ -75,46 +81,62 @@ public class Database {
     }
 
     /**
-     * Adds a record to the database by constructing an executing an SQL statement
-     * @param tableName Name of mysql table to add values in
-     * @param values Values to add, where key is the column name and value is the value to add to that column
+     * Adds a record to the erroneous asset table in the EIS quality database
+     * @param ware Value to insert into hardware field
+     * @param logCode Value to insert into logger code field
+     * @param logChan Value to insert into logger channel field
      */
-    public void addAssetRecord(String tableName, Map<String, String> values){
+    public void addAsset(String ware, String logCode, String logChan){
         try {
-            /*Construct SQL statement based on input parameters*/
-            StringBuilder columnNames = new StringBuilder();
-            StringBuilder valueNames = new StringBuilder();
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ASSET_DB_NAME+" (hardware, logger_code, logger_channel) VALUES(?, ?, ?) ON DUPLICATE KEY UPDATE id = id");
+            stmt.setString(1, ware); // specify each parameter ('?') in the query
+            stmt.setString(2,logCode);
+            stmt.setString(3, logChan);
 
-            columnNames.append(" (");
-            valueNames.append(" (");
-            for (String key: values.keySet()){
-                columnNames.append(key + ", ");
-                valueNames.append(values.get(key) + ", ");
-            }
-            columnNames.setLength(columnNames.length()-2);
-            columnNames.append(") ");
-            valueNames.setLength(valueNames.length()-2);
-            valueNames.append(") ");
-
-            String query = ("INSERT INTO "+ tableName + columnNames + "VALUES" + valueNames + "ON DUPLICATE KEY UPDATE id = id");
-            //System.out.println("Executing >> " + query); //debug
-            st.executeUpdate(query);
+            int i = stmt.executeUpdate();
+            System.out.println(i +" record(s) added to "+ ASSET_DB_NAME);
         }
         catch (Exception e){
             e.printStackTrace();
         }
     }
 
-    public void addMeterError(int errType, String logCode, String logChan, Timestamp time){
+    /**
+     * Adds a record to the erroneous asset table in the EIS quality database
+     * @param ware Value to insert into hardware field
+     * @param logCode Value to insert into logger code field
+     */
+    public void addAsset(String ware, String logCode){
         try {
-            PreparedStatement stmt = con.prepareStatement("INSERT INTO errors (error_type, logger_code, logger_channel, timeVal) VALUES(?, ?, ?, ?)");
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ASSET_DB_NAME+" (hardware, logger_code) VALUES(?, ?) ON DUPLICATE KEY UPDATE id = id");
+            stmt.setString(1, ware); // specify each parameter ('?') in the query
+            stmt.setString(2,logCode);
+
+            int i = stmt.executeUpdate();
+            System.out.println(i +" record(s) added to "+ ASSET_DB_NAME);
+        }
+        catch (Exception e){
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Adds a record to the erroneous asset table in the EIS quality database
+     * @param errType Value to insert into error type field
+     * @param logCode Value to insert into logger code field
+     * @param logChan Value to insert into logger channel field
+     * @param time Value to insert into time field
+     */
+    public void addError(int errType, String logCode, String logChan, Timestamp time){
+        try {
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ERROR_DB_NAME+" (error_type, logger_code, logger_channel, timeVal) VALUES(?, ?, ?, ?)");
             stmt.setInt(1, errType); // specify each parameter ('?') in the query
             stmt.setString(2,logCode);
             stmt.setString(3, logChan);
             stmt.setTimestamp(4, time);
 
             int i = stmt.executeUpdate();
-            System.out.println(i+" records inserted in errors"); // debug
+            System.out.println(i +" record(s) added to "+ ERROR_DB_NAME);
         }
         catch (Exception e){
             e.printStackTrace();
@@ -122,44 +144,39 @@ public class Database {
     }
 
     /**
-     * Adds a record to the database by constructing an executing an SQL statement
-     * @param tableName Name of mysql table to add values in
-     * @param values Values to add, where key is the column name and value is the value to add to that column
+     * Adds a record to the errors table in the EIS quality database
+     * @param errType Value to insert into error type field
+     * @param logCode Value to insert into logger code field
+     * @param logChan Value to insert into logger channel field
      */
-    public void addAssetRecord(String tableName, Map<String, String> values, Map<String, String> updateOnDuplicate){
+    public void addError(int errType, String logCode, String logChan){
         try {
-            /*Construct SQL statement based on input parameters*/
-            StringBuilder columnNames = new StringBuilder();
-            StringBuilder valueNames = new StringBuilder();
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ERROR_DB_NAME+" (error_type, logger_code, logger_channel) VALUES(?, ?, ?)");
+            stmt.setInt(1, errType); // specify each parameter ('?') in the query
+            stmt.setString(2,logCode);
+            stmt.setString(3, logChan);
 
-            columnNames.append(" (");
-            valueNames.append(" (");
-            for (String key: values.keySet()){
-                columnNames.append(key + ", ");
-                valueNames.append(values.get(key) + ", ");
-            }
-            columnNames.setLength(columnNames.length()-2);
-            columnNames.append(") ");
-            valueNames.setLength(valueNames.length()-2);
-            valueNames.append(") ");
+            int i = stmt.executeUpdate();
+            System.out.println(i +" record(s) added to "+ ERROR_DB_NAME);
+        }
+        catch (Exception e){
+            e.printStackTrace();
+        }
+    }
 
-            StringBuilder updateCols = new StringBuilder();
-            StringBuilder updateVals = new StringBuilder();
+    /**
+     * Adds a record to the errors table in the EIS quality database
+     * @param errType Value to insert into error type field
+     * @param logCode Value to insert into logger code field
+     */
+    public void addError(int errType, String logCode){
+        try {
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ERROR_DB_NAME+" (error_type, logger_code) VALUES(?, ?)");
+            stmt.setInt(1, errType); // specify each parameter ('?') in the query
+            stmt.setString(2,logCode);
 
-            updateCols.append(" ");
-            updateVals.append(" ");
-            for (String key: updateOnDuplicate.keySet()){
-                updateCols.append(key + ", ");
-                updateVals.append(updateOnDuplicate.get(key) + ", ");
-            }
-            updateCols.setLength(columnNames.length()-2);
-            updateVals.append(" ");
-            updateCols.setLength(valueNames.length()-2);
-            updateVals.append(" ");
-
-            String query = ("INSERT INTO "+ tableName + columnNames + "VALUES" + valueNames + " ON DUPLICATE KEY UPDATE" + updateCols + " = " + updateVals);
-            //System.out.println("Executing >> " + query); //debug
-            st.executeUpdate(query);
+            int i = stmt.executeUpdate();
+            System.out.println(i +" record(s) added to "+ ERROR_DB_NAME);
         }
         catch (Exception e){
             e.printStackTrace();
@@ -170,14 +187,13 @@ public class Database {
      * Executes a set of SQL statements from file. Adaptation from code by Tom Enders:
      * https://coderanch.com/t/306966/databases/Execute-sql-file-java
      * @param path File path to SQL scripts e.g <path to folder>/scripts.sql
-     * @throws SQLException
+     * @throws SQLException SQL syntax error in specified filepath
+     * @throws FileNotFoundException Could not find file for specified filepath
      */
-    public void executeSQLScript(String path) throws SQLException {
+    public int executeSQLScript(String path) throws SQLException, FileNotFoundException {
 
         try {
             FileReader fr = new FileReader(new File(path));
-            // be sure to not have line starting with "--" or "/*" or any other non alphabetical character
-
             BufferedReader br = new BufferedReader(fr);
             String s;
             StringBuffer sb = new StringBuffer();
@@ -203,11 +219,19 @@ public class Database {
                 }
             }
         }
-        catch(Exception e) {
-            System.out.println("DB Error:");
-            e.printStackTrace();
+        catch (FileNotFoundException e) {
+            System.out.println("DB Error: Could not find file "+ path);
+            throw e;
         }
-
+        catch(IOException e) {
+            System.out.println("DB Error: Could not read file "+ path);
+            return 0;
+        }
+        catch(SQLException e) {
+            System.out.println("DB Error: Syntax error in SQL from file "+ path);
+            throw e;
+        }
+        return 1;
     }
 
     /**
