@@ -27,6 +27,17 @@ CREATE TABLE errors
   PRIMARY KEY (id)
 );
 
+DROP TABLE IF EXISTS qualitylog;
+CREATE TABLE qualitylog
+(
+    id int NOT NULL auto_increment,
+    total_assets int NOT NULL
+    erroneous_assets int NOT NULL,
+    error_count int NOT NULL,
+
+    PRIMARY KEY (id)
+);
+
 DROP TABLE IF EXISTS errortypelookup;
 CREATE TABLE errortypelookup
 (

@@ -169,7 +169,7 @@ public class Driver {
     /**
      * Perform a full initialisation of the EIS quality database; creating the database schema itself, before analysing every data
      * record in CKAN and populating the database with found errors
-     * @return Returns 1 if script was successful, 0 if error occurred
+     * @return Returns 1 if successful, 0 if error occurred
      */
     public int initDB() {
 
@@ -190,12 +190,12 @@ public class Driver {
         ExecutorService es = Executors.newCachedThreadPool();
         es.execute(new Thread() { // execute code on new thread
             public void run() {
-                testAllMeters();
+                System.out.println("Meter Errors: "+ testAllMeters());
             }
         });
         es.execute(new Thread() { // execute code on new thread
             public void run() {
-                testMetadata();
+                System.out.println("Metadata Errors: "+ testMetadata());
             }
         });
 
@@ -213,11 +213,13 @@ public class Driver {
     }
 
     /**
-     * TODO Write Me
+     * Update the EIS quality database by only analysing records from ckan which are currently unaccounted for
+     * @return Returns 1 if successful, 0 if error occurred
      */
-    public void updateDB(){
+    public int updateDB(){
         // Update DB Records
         System.out.println("Not Implemented.");
+        return 1;
     }
 
     /**
@@ -287,10 +289,8 @@ public class Driver {
                 database.addAsset("logger", loggerCodes[i]);
             }
         }
-        System.out.println("Erroneous Loggers: " + errors);
 
         /*Test every meter in metadata*/
-
         for (int i = 0; i < meterCodes.length; i++){ // for every meter
             boolean errorDetected = false;
 
@@ -325,8 +325,6 @@ public class Driver {
                 database.addAsset("meter", meterCodes[i], meterList.getJSONObject(i).getString("Logger Channel"), meterList.getJSONObject(i).getString("Utility Type"));
             }
         }
-        System.out.println("Erroneous Meters: " + errors);
-        System.out.println("Metadata Processing Successful");
         return errors;
     }
 
@@ -351,7 +349,17 @@ public class Driver {
                 if (type.equals(BMS_CLASSIFICATION_GROUP)) { // if the meter is from BMS
                     try {
                         List<JSONObject> json = getBMSMeterJSON(code, chan); // List of JSON objects, representing every meter reading
-                        testMeter(json, util); // test every meter
+
+                        /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
+                        if (json.size() == 0){
+
+                            Date now = new Date(); // use DB time value as current time
+                            Timestamp timestamp = new Timestamp(now.getTime());
+                            database.addError(20, code, chan, timestamp); // Write error to DB
+                        }
+                        else {
+                            testMeter(json, util); // test every meter
+                        }
                     }
                     catch (Exception e){
                         toReturn++;
@@ -361,7 +369,17 @@ public class Driver {
                 else if (type.equals(EMS_CLASSIFICATION_GROUP)){ // if the meter is from EMS
                     try {
                         List<JSONObject> json = getBMSMeterJSON(code, chan); // List of JSON objects, representing every meter reading
-                        testMeter(json, util); // test every meter
+
+                        /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
+                        if (json.size() == 0){
+
+                            Date now = new Date(); // use DB time value as current time
+                            Timestamp timestamp = new Timestamp(now.getTime());
+                            database.addError(20, code, chan, timestamp); // Write error to DB
+                        }
+                        else {
+                            testMeter(json, util); // test every meter
+                        }
                     }
                     catch (Exception e){
                         toReturn++;
@@ -392,13 +410,13 @@ public class Driver {
         String moduleKey = jsonValues.get(0).getString("Logger Channel");
 
         /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
-        if (jsonValues.size() == 0){
-
-            Date now = new Date(); // use DB time value as current time
-            Timestamp timestamp = new Timestamp(now.getTime());
-            database.addError(20, loggerCode, moduleKey, timestamp); // Write error to DB
-            return; // return from method; no records to test therefore no need to continue
-        }
+//        if (jsonValues.size() == 0){
+//
+//            Date now = new Date(); // use DB time value as current time
+//            Timestamp timestamp = new Timestamp(now.getTime());
+//            database.addError(20, loggerCode, moduleKey, timestamp); // Write error to DB
+//            return; // return from method; no records to test therefore no need to continue
+//        }
 
         /*Sort the meter readings by their timestamp*/
         Collections.sort( jsonValues, new Comparator<JSONObject>() {
@@ -561,7 +579,7 @@ public class Driver {
             }
         }
         catch (Exception e){
-            //e.printStackTrace();
+            e.printStackTrace();
         }
         return jsonValues; // Returns list of JSON objects for all meter readings
     }
@@ -577,7 +595,7 @@ public class Driver {
         readingJSON = null; // reset JSONObject for reading; precaution
         List<JSONObject> jsonValues = new ArrayList<>();
 
-        //...
+        /*TODO New EMS metadata does not relate to EMS records, the same logic as getBMSMeterJSON can be used here, but with different filenames and maybe different field names, depending on whether the old metadata is used*/
 
         return jsonValues; // Returns list of JSON objects for all meter readings
     }
