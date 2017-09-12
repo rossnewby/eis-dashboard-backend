@@ -8,14 +8,16 @@ import java.util.*;
  */
 public class Database {
 
-    private static String URL = "not set";
+    private static String URL = "not set"; // mysql authentication
     private static String USER = "not set";
     private static String PASSWORD = "not set";
 
-    private static String ASSET_DB_NAME = "erroneousassets";
-    private static String ERROR_DB_NAME = "errors";
+    public static String ASSET_DB_NAME = "erroneousassets"; // table names in DB
+    public static String ERROR_DB_NAME = "errors";
+    public static String QUALITY_LOG_DB_NAME = "qualitylog";
+    public static String ERROR_LOOKUP_DB_NAME = "errortypelookup";
 
-    static private final int PAD_SIZE = 30;
+    static private final int PAD_SIZE = 30; // for printing DB
 
     private Connection con; // mysql DB connection
     private Statement st;
@@ -64,13 +66,15 @@ public class Database {
      * @param logChan Value to insert into logger channel field
      * @param util Value to insert into utility type field
      */
-    public void addAsset(String ware, String logCode, String logChan, String util){
+    public void addAsset(String ware, String logCode, String logChan, String util, Timestamp time){
         try {
-            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ASSET_DB_NAME+" (hardware, logger_code, logger_channel, utility_type) VALUES(?, ?, ?, ?) ON DUPLICATE KEY UPDATE id = id");
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ASSET_DB_NAME+" (hardware, logger_code, logger_channel, utility_type, most_recent_error) VALUES(?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE most_recent_error = ?");
             stmt.setString(1, ware); // specify each parameter ('?') in the query
             stmt.setString(2,logCode);
             stmt.setString(3, logChan);
             stmt.setString(4, util);
+            stmt.setTimestamp(5, time);
+            stmt.setTimestamp(6, time);
 
             int i = stmt.executeUpdate();
             System.out.println(i +" record(s) added to "+ ASSET_DB_NAME);
@@ -86,12 +90,14 @@ public class Database {
      * @param logCode Value to insert into logger code field
      * @param logChan Value to insert into logger channel field
      */
-    public void addAsset(String ware, String logCode, String logChan){
+    public void addAsset(String ware, String logCode, String logChan, Timestamp time){
         try {
-            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ASSET_DB_NAME+" (hardware, logger_code, logger_channel) VALUES(?, ?, ?) ON DUPLICATE KEY UPDATE id = id");
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ASSET_DB_NAME+" (hardware, logger_code, logger_channel, most_recent_error) VALUES(?, ?, ?, ?) ON DUPLICATE KEY UPDATE most_recent_error = ?");
             stmt.setString(1, ware); // specify each parameter ('?') in the query
             stmt.setString(2,logCode);
             stmt.setString(3, logChan);
+            stmt.setTimestamp(4, time);
+            stmt.setTimestamp(5, time);
 
             int i = stmt.executeUpdate();
             System.out.println(i +" record(s) added to "+ ASSET_DB_NAME);
@@ -106,11 +112,13 @@ public class Database {
      * @param ware Value to insert into hardware field
      * @param logCode Value to insert into logger code field
      */
-    public void addAsset(String ware, String logCode){
+    public void addAsset(String ware, String logCode, Timestamp time){
         try {
-            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ASSET_DB_NAME+" (hardware, logger_code) VALUES(?, ?) ON DUPLICATE KEY UPDATE id = id");
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ASSET_DB_NAME+" (hardware, logger_code, most_recent_error) VALUES(?, ?, ?) ON DUPLICATE KEY UPDATE most_recent_error = ?");
             stmt.setString(1, ware); // specify each parameter ('?') in the query
             stmt.setString(2,logCode);
+            stmt.setTimestamp(3, time);
+            stmt.setTimestamp(4, time);
 
             int i = stmt.executeUpdate();
             System.out.println(i +" record(s) added to "+ ASSET_DB_NAME);
@@ -180,6 +188,65 @@ public class Database {
         }
         catch (Exception e){
             e.printStackTrace();
+        }
+    }
+
+    /**
+     * Adds a record to the quality log table in the EIS quality database
+     * @param assets Total number of hardware devices on the system
+     * @param erroneousAssets Total number of hardware devices for which errors were detected
+     * @param errors Total number of individual errors
+     * @param time Time at which this quality test occurred
+     */
+    public void addLog(int assets, int erroneousAssets, int errors, Timestamp time){
+        try {
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+QUALITY_LOG_DB_NAME+" (total_assets, erroneous_assets, error_count, timeVal) VALUES(?, ?, ?, ?)");
+            stmt.setInt(1, assets); // specify each parameter ('?') in the query
+            stmt.setInt(2,erroneousAssets);
+            stmt.setInt(3, errors);
+            stmt.setTimestamp(4, time);
+
+            int i = stmt.executeUpdate();
+            System.out.println(i +" record(s) added to "+ QUALITY_LOG_DB_NAME);
+        }
+        catch (Exception e){
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Adds a record to the error type lookup table in the EIS quality database
+     * @param id Unique ID for record
+     * @param desc Description of the error
+     */
+    public void addLookup(int id, String desc){
+        try {
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ERROR_LOOKUP_DB_NAME+" VALUES(?, ?)");
+            stmt.setInt(1, id); // specify each parameter ('?') in the query
+            stmt.setString(2, desc);
+
+            int i = stmt.executeUpdate();
+            System.out.println(i +" record(s) added to "+ ERROR_LOOKUP_DB_NAME);
+        }
+        catch (Exception e){
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Retrieves the number of records found in a table
+     * @param tableName Name of the table you wish to query
+     * @return Number of records in the table or -1 if the method fails
+     */
+    public int getTableLength(String tableName){
+        try {
+            Statement sqlStmt = con.createStatement(ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);
+            ResultSet rSet = sqlStmt.executeQuery("SELECT * FROM "+tableName);
+            rSet.last();
+            return rSet.getRow();
+        }
+        catch (Exception e){
+            return -1;
         }
     }
 

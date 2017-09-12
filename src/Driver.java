@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit;
  *
  * @Author Ross Newby
  */
-public class Driver {
+public class Driver extends TimerTask {
 
     /*Variables used for metadata and other JSONs*/
     private JSONObject packageJSON = null; // JSON objects for all metadata
@@ -41,6 +41,8 @@ public class Driver {
     private Database database = null; // mysql database
     private Scanner scanner = new Scanner(System.in); // used for basic console line input
     private String input = null;
+    int totalErrors = 0; // number of errors found in system; must be global to access in threads
+    int totalErroneousAssets = 0;
 
     /**
      * Initialises a server by reading basic authentication details and API data from config file. Also queries CKAN datastore for all
@@ -109,22 +111,29 @@ public class Driver {
             System.out.println("Metadata Threads Interrupted:");
             e.printStackTrace();
         }
-
-        System.out.println("Setup Complete!"); // confirmation message
         serverMenu();
+        System.out.println("Setup Complete!"); // confirmation message
     }
 
     /**
-     *
+     * Called when Driver is invoked on a timer
      */
-    private void serverMenu(){
+    @Override
+    public void run() {
+        updateDB(); // When Driver is called on a Timer, update the DB
+    }
+
+    /**
+     * Used to manually input commands to the Driver
+     */
+    public void serverMenu(){
 
         while (!"9".equals(input)) {
             INVALID:
             {
                 System.out.println("-- Actions --");
                 System.out.println("Select an Action:\n" + // Menu Options
-                                    "  1) Print Database\n" +
+                                    //"  1) Print Database\n" +
                                     "  2) Fresh Database Initialisation\n" + // Initialise the DB and all its data, reading every available record from CKAN
                                     "  3) Update Database\n" );
                 input = scanner.nextLine();
@@ -184,21 +193,24 @@ public class Driver {
             System.out.println("Initialising Failed: Could not start DB; check "+ DB_INIT_FILEPATH);
             return 0;
         }
-        database.printDatabase(); //debug
 
         /*Test metadata and meter data on separate threads*/
+        totalErrors = 0;
         ExecutorService es = Executors.newCachedThreadPool();
         es.execute(new Thread() { // execute code on new thread
             public void run() {
-                System.out.println("Meter Errors: "+ testAllMeters());
+                //System.out.println("Meter Errors: "+ testAllMeters());
+                totalErrors =+ testAllMeters();
             }
         });
         es.execute(new Thread() { // execute code on new thread
             public void run() {
-                System.out.println("Metadata Errors: "+ testMetadata());
+                //System.out.println("Metadata Errors: "+ testMetadata());
+                totalErrors =+ testMetadata();
             }
         });
 
+        /*Wait for both threads to end; meaning all metadata and meter readings have been tested*/
         es.shutdown();
         try {
             es.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
@@ -208,18 +220,101 @@ public class Driver {
             return 0;
         }
 
+        /*Log an overview of quality to the DB*/
+        int nAssets = meterJSON.length() + loggerJSON.length();
+        Date now = new Date();
+        Timestamp timestamp = new Timestamp(now.getTime()); // use DB time value as current time
+        database.addLog(nAssets, database.getTableLength("erroneousassets"), database.getTableLength("errors"), timestamp);
+
         System.out.println("Database Initialised!"); // confirmation message
         return 1;
     }
 
     /**
      * Update the EIS quality database by only analysing records from ckan which are currently unaccounted for
-     * @return Returns 1 if successful, 0 if error occurred
+     * @return Number of errors found
      */
     public int updateDB(){
-        // Update DB Records
-        System.out.println("Not Implemented.");
-        return 1;
+
+        String month = new SimpleDateFormat("MMM").format(Calendar.getInstance().getTime()).toLowerCase();
+        int year = Calendar.getInstance().get(Calendar.YEAR);
+        String fileNameEnding = "-"+month+"-"+year; // file ending used in ckan file e.g. '-sep-2017'
+
+        JSONArray meterList = meterJSON.getJSONObject("result").getJSONArray("records"); //list of meters
+        int errors = 0; // total number of errors
+        int untested = 0; // number of untested meters
+
+        // TODO Each process uses a very large qty of heap space for CKAN requests, therefore multithreading would be better here, but it needs testing with thread limits
+        for (int i = 0; i < meterList.length(); i++) { // for every meter
+
+            String code = meterList.getJSONObject(i).getString("Logger Asset Code"); // logger code
+            String chan = meterList.getJSONObject(i).getString("Logger Channel"); // logger channel
+            String util = meterList.getJSONObject(i).getString("Utility Type"); // utility type
+
+            if (!code.equals("") && !chan.equals("")) { // can only test meter if it has a logger code and channel
+
+                String type = meterList.getJSONObject(i).getString("Classification Group"); // finds out whether the file is from EMS or BMS
+
+                if (type.equals(BMS_CLASSIFICATION_GROUP)) { // if the meter is from BMS
+                    try {
+                        List<JSONObject> json = getBMSMeterJSON(code, chan, "bms"+fileNameEnding); // List of JSON objects, representing every meter reading
+
+                        /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
+                        if (json.size() == 0){
+
+                            errors++;
+                            Date now = new Date(); // use DB time value as current time
+                            Timestamp timestamp = new Timestamp(now.getTime());
+                            database.addError(20, code, chan, timestamp); // Write error to DB
+                            database.addAsset("meter", code, chan, util, timestamp);
+                        }
+                        else {
+                            errors =+ testMeter(json, util); // test every meter
+                        }
+                    }
+                    catch (Exception e){
+                        untested++;
+                        // Nothing more; continue processing next meter
+                    }
+                }
+                else if (type.equals(EMS_CLASSIFICATION_GROUP)){ // if the meter is from EMS
+                    try {
+                        List<JSONObject> json = getEMSMeterJSON(code, chan, "ems"+fileNameEnding); // List of JSON objects, representing every meter reading
+
+                        /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
+                        //TODO Uncomment once JSON values can be read effectively from ckan; refer to TODO in getEMSMeterJSON method
+//                        if (json.size() == 0){
+//
+//                            errors+=
+//                            Date now = new Date(); // use DB time value as current time
+//                            Timestamp timestamp = new Timestamp(now.getTime());
+//                            database.addError(20, code, chan, timestamp); // Write error to DB
+//                            database.addAsset("meter", code, chan, util, timestamp);
+//                        }
+//                        else {
+//                             errors =+ testMeter(json, util); // test every meter
+//                        }
+                    }
+                    catch (Exception e){
+                        untested++;
+                        // Nothing more; continue processing next meter
+                    }
+                }
+            }
+            else { // meter doesn't have a code and channel
+                untested++;
+                // Nothing more; continue processing next meter
+            }
+        }
+        System.out.println("Finished Update! Debug: Could Not Test "+untested+" meters"); // debug
+
+        /*Log an overview of quality to the DB*/
+        int nAssets = meterJSON.length() + loggerJSON.length();
+        Date now = new Date();
+        Timestamp timestamp = new Timestamp(now.getTime()); // use DB time value as current time
+        database.addLog(nAssets, database.getTableLength("erroneousassets"), database.getTableLength("errors"), timestamp);
+
+        return errors; // successfully updated DB
     }
 
     /**
@@ -251,8 +346,10 @@ public class Driver {
         }
         meterCodes = convertToArray(meterArray); // convert to regular String arrays
 
-        int errors = 0;
         /*Test every logger in metadata*/
+        int errors = 0; // number of errors found; to return
+        Date now = new Date();
+        Timestamp timestamp = new Timestamp(now.getTime()); // all errors logged with current time
 
         for (int i = 0; i < loggerCodes.length; i++){ // for every logger
             boolean errorDetected = false;
@@ -268,31 +365,32 @@ public class Driver {
             if (!found){
                 errorDetected = true;
                 errors++;
-                database.addError(1, loggerCodes[i], "");
+                database.addError(1, loggerCodes[i], "", timestamp);
             }
 
             /*Test for loggers with missing data fields (asset code, logger channel, description etc...*/
             if (loggerList.getJSONObject(i).getString("Building Code").equals("")){ // no building code
                 errorDetected = true;
                 errors++;
-                database.addError(2, loggerCodes[i], "");
+                database.addError(2, loggerCodes[i], "", timestamp);
             }
             if (loggerList.getJSONObject(i).getString("Description").equals("")){ // no description
                 errorDetected = true;
                 errors++;
-                database.addError(3, loggerCodes[i], "");
+                database.addError(3, loggerCodes[i], "", timestamp);
             }
 
             /*If an error was found for the logger, add this logger to quality database*/
             if (errorDetected){
                 errors++;
-                database.addAsset("logger", loggerCodes[i]);
+                database.addAsset("logger", loggerCodes[i], timestamp);
             }
         }
 
         /*Test every meter in metadata*/
         for (int i = 0; i < meterCodes.length; i++){ // for every meter
             boolean errorDetected = false;
+            String chan = meterList.getJSONObject(i).getString("Logger Channel");
 
             /*Test for meters without loggers associated with it in the metadata*/
             boolean found = false;
@@ -302,27 +400,27 @@ public class Driver {
                     break; // break if logger matching meter is found
                 }
             }
-            if (!found){
+            if (!found){ // if no logger matching the meter was found
                 errorDetected = true;
                 errors++;
-                database.addError(10, meterCodes[i], "");
+                database.addError(10, meterCodes[i], chan, timestamp); // log an error
             }
 
             /*Test for meters with missing data fields (asset code, logger channel, description etc...*/
             if (meterList.getJSONObject(i).getString("Asset Code").equals("")){
                 errorDetected = true;
                 errors++;
-                database.addError(11, meterCodes[i], "");
+                database.addError(11, meterCodes[i], chan, timestamp);
             }
             if (meterList.getJSONObject(i).getString("Description").equals("")){
                 errorDetected = true;
                 errors++;
-                database.addError(12, meterCodes[i], "");
+                database.addError(12, meterCodes[i], chan, timestamp);
             }
 
             /*If an error was found for the meter, add this meter to database*/
             if (errorDetected){
-                database.addAsset("meter", meterCodes[i], meterList.getJSONObject(i).getString("Logger Channel"), meterList.getJSONObject(i).getString("Utility Type"));
+                database.addAsset("meter", meterCodes[i], chan, meterList.getJSONObject(i).getString("Utility Type"), timestamp);
             }
         }
         return errors;
@@ -330,12 +428,15 @@ public class Driver {
 
     /**
      * Test every meter for EMS and BMS for errors
-     * @return The number of meters which could not be processed for errors
+     * @return The number of errors found
      */
     private int testAllMeters(){
 
         JSONArray meterList = meterJSON.getJSONObject("result").getJSONArray("records"); //list of meters
-        int toReturn = 0;
+        int errors = 0; // to return
+        int untested = 0; // number of meters that were not tested
+
+        // TODO Each process uses a very large qty of heap space for CKAN requests, therefore multithreading would be better here, but it needs testing with thread limits
         for (int i = 0; i < meterList.length(); i++) { // for every meter
 
             String code = meterList.getJSONObject(i).getString("Logger Asset Code"); // logger code
@@ -353,70 +454,60 @@ public class Driver {
                         /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
                         if (json.size() == 0){
 
+                            errors++;
                             Date now = new Date(); // use DB time value as current time
                             Timestamp timestamp = new Timestamp(now.getTime());
                             database.addError(20, code, chan, timestamp); // Write error to DB
+                            database.addAsset("meter", code, chan, util, timestamp);
                         }
                         else {
-                            testMeter(json, util); // test every meter
+                            errors =+ testMeter(json, util); // test every meter
                         }
                     }
                     catch (Exception e){
-                        toReturn++;
+                        untested++;
                         // Nothing more; continue processing next meter
                     }
                 }
                 else if (type.equals(EMS_CLASSIFICATION_GROUP)){ // if the meter is from EMS
                     try {
-                        List<JSONObject> json = getBMSMeterJSON(code, chan); // List of JSON objects, representing every meter reading
+                        List<JSONObject> json = getEMSMeterJSON(code, chan); // List of JSON objects, representing every meter reading
 
                         /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
-                        if (json.size() == 0){
+                        // TODO Uncomment once JSON values can be read effectively from ckan; refer to TODO in getEMSMeterJSON method
+//                        if (json.size() == 0){
 
-                            Date now = new Date(); // use DB time value as current time
-                            Timestamp timestamp = new Timestamp(now.getTime());
-                            database.addError(20, code, chan, timestamp); // Write error to DB
-                        }
-                        else {
-                            testMeter(json, util); // test every meter
-                        }
+//                            errors++;
+//                            Date now = new Date(); // use DB time value as current time
+//                            Timestamp timestamp = new Timestamp(now.getTime());
+//                            database.addError(20, code, chan, timestamp); // Write error to DB
+//                            database.addAsset("meter", code, chan, util, timestamp);
+//                        }
+//                        else {
+//                            errors =+ testMeter(json, util); // test every meter
+//                        }
                     }
                     catch (Exception e){
-                        toReturn++;
+                        untested++;
                         // Nothing more; continue processing next meter
                     }
                 }
-                // TODO Multithreading (if possible, as each process uses a very large qty of heap space for CKAN requests, thread limit may be the answer)
             }
             else { // meter doesn't have a code and channel
-                toReturn++;
+                untested++;
+                // Ignore
             }
         }
-        return toReturn; // number of meters which were not tested
+        System.out.println("Finished! Debug: Could Not Test "+untested+" meters"); // debug
+        return errors; // number of meters which were not tested
     }
 
     /**
-     * Tests a specified BMS meter for errors and adds any detected errors to the sql database
+     * Tests a specified meter / sensor for errors and adds any detected errors to the sql database
      * @param jsonValues List of JSON objects representing every meter reading
-     * @param utilityType
+     * @param utilityType The utility type of the meter
      */
-    private void testMeter(List<JSONObject> jsonValues, String utilityType){
-
-        int errors = 0;
-        boolean errorDetected = false;
-        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss");
-
-        String loggerCode = jsonValues.get(0).getString("Logger Asset Code");
-        String moduleKey = jsonValues.get(0).getString("Logger Channel");
-
-        /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
-//        if (jsonValues.size() == 0){
-//
-//            Date now = new Date(); // use DB time value as current time
-//            Timestamp timestamp = new Timestamp(now.getTime());
-//            database.addError(20, loggerCode, moduleKey, timestamp); // Write error to DB
-//            return; // return from method; no records to test therefore no need to continue
-//        }
+    private int testMeter(List<JSONObject> jsonValues, String utilityType){
 
         /*Sort the meter readings by their timestamp*/
         Collections.sort( jsonValues, new Comparator<JSONObject>() {
@@ -441,6 +532,20 @@ public class Driver {
         });
 
         /*Error Tests for Meter:*/
+        String loggerCode;
+        String moduleKey;
+        try {
+            loggerCode = jsonValues.get(0).getString("Logger Asset Code");
+            moduleKey = jsonValues.get(0).getString("Logger Channel");
+        }
+        catch (Exception e){
+            return 0; // method fails; jsonValues was likely empty
+        }
+
+        int errors = 0;
+        boolean errorDetected = false;
+        Date mostRecentError = new Date();
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss");
 
         /*Check whether meter has recent data*/
         Date now = new Date(); // time now
@@ -499,8 +604,10 @@ public class Driver {
 
         /*If an error was found for the meter, add this meter to database assets*/
         if (errorDetected){
-            database.addAsset("meter", loggerCode, moduleKey, utilityType);
+            Timestamp timestamp = new Timestamp(mostRecentError.getTime());
+            database.addAsset("meter", loggerCode, moduleKey, utilityType, timestamp);
         }
+        return 1; // successfully tested meter
     }
 
     /**
@@ -511,9 +618,21 @@ public class Driver {
      * @return List of all data for the specified BMS meter
      */
     private List<JSONObject> getBMSMeterJSON(String loggerCode, String moduleKey){
+        return getBMSMeterJSON(loggerCode, moduleKey, "");
+    }
+
+    /**
+     * Convert all data for a single BMS meter to a single list of JSON objects.
+     * Both the logger code and module key make a unique identifier for the Meter
+     * @param loggerCode Meters / sensor's logger code
+     * @param moduleKey Meter / sensor's module key aka logger channel
+     * @param file BMS file name to read from, if unspecified, all BMS files will be read
+     * @return List of all data for the specified BMS meter
+     */
+    private List<JSONObject> getBMSMeterJSON(String loggerCode, String moduleKey, String file){
 
         readingJSON = null; // reset JSONObject for reading; precaution
-        List<JSONObject> jsonValues = new ArrayList<>();
+        List<JSONObject> jsonValues = new ArrayList<>(); // to return
 
         try {
             /*List of BMS files in CKAN*/
@@ -521,19 +640,29 @@ public class Driver {
             JSONObject bmsJSON = ckanReq.requestJSON();
             JSONArray bmsList = bmsJSON.getJSONObject("result").getJSONArray("resources"); // Array of bms files in CKAN (JSON Objects)
             Map<String, String> fileMap = new HashMap<>();
-            for (int i = 0; i < bmsList.length(); i++){ // each BMS file
-                String fileName = bmsList.getJSONObject(i).getString("name"); // next BMS filename
-                if (!fileName.equals("bmsdevicemeta") && !fileName.equals("bmsmodulemeta")){ // don't include bms metadata in list
+            for (int i = 0; i < bmsList.length(); i++){ // for every BMS file name in ckan
 
-                    if(fileName.contains("2017") || fileName.equals("bms-dec-2016")) { //TODO Account for older 2016 data
-                        fileMap.put(bmsList.getJSONObject(i).getString("id"), fileName);
+                String fileName = bmsList.getJSONObject(i).getString("name"); // next BMS filename
+
+                if (file.equals("")) { // if no file is specified as parameter, list all BMS filenames
+
+                    if (!fileName.equals("bmsdevicemeta") && !fileName.equals("bmsmodulemeta")) { // don't include bms metadata in list
+
+                        //TODO Data in CKAN pre Dec-2016 is a different format (or in some cases blank), this 'if' can be removed if ckan is changed
+                        if (fileName.contains("2017") || fileName.equals("bms-dec-2016")) {
+                            fileMap.put(bmsList.getJSONObject(i).getString("id"), fileName); // add file name to list
+                        }
                     }
+                }
+                else if (fileName.equals(file)){ // if a file is specified as parameter, only list this filename
+
+                    fileMap.put(bmsList.getJSONObject(i).getString("id"), fileName); //add file name to list
                 }
             }
 
             readingJSON = new JSONObject(); // empty JSON to repeatedly update with meter data
 
-            /*Get data for the specified meter from every bms file*/
+            /*Get data for the specified meter from every bms file name listed*/
             ExecutorService es = Executors.newCachedThreadPool();
             for (String fileID: fileMap.keySet()) { // for every bms file
                 es.execute(new Thread() { // execute code on new thread
@@ -547,12 +676,6 @@ public class Driver {
                             /*Append meter data to JSON*/
                             JSONArray toAccumulate = newJSON.getJSONObject("result").getJSONArray("records"); // records from JSON object to append
                             readingJSON.accumulate("records", toAccumulate); // append meter data to the new JSON object
-
-                            /*TODO Is it better to have this slower, but neater approach?*/
-                            /*Adding each JSONObject separately (below) results in a better return JSON but much longer processing time
-                            for (int i = 0; i < toAccumulate.length(); i++){
-                                readingJSON.accumulate("records", toAccumulate.getJSONObject(i));
-                            }*/
                         }
                         catch (Exception e) {
                             System.out.println("Could not read " + fileMap.get(fileID));
@@ -561,20 +684,19 @@ public class Driver {
                     }
                 });
             }
-            readingJSON.accumulate("files", fileMap); // append list of files to JSON
+            readingJSON.accumulate("files", fileMap); // append list of files read to JSON
 
             /*Wait for all thread to end*/
-            //System.out.println("Waiting on Threads for " + loggerCode + "-" + moduleKey + "...");
             es.shutdown();
             es.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
-            System.out.println("All records read: " + loggerCode + "-" + moduleKey);
+            // System.out.println("All records read: " + loggerCode + "-" + moduleKey); // debug
 
             /*Add each JSONObject from meter into a list (which will later be returned)*/
             JSONArray meterArray = readingJSON.getJSONArray("records");
-            for (int i = 1; i < meterArray.length(); i++) { //TODO change looping if taking the slower (but neater) approach above
-                JSONArray jsonArray = meterArray.getJSONArray(i);
+            for (int i = 1; i < meterArray.length(); i++) { // for every record, which is a JSON array of JSON arrays
+                JSONArray jsonArray = meterArray.getJSONArray(i); // get the JSON array at position i
                 for (int j = 0; j < jsonArray.length(); j++) {
-                    jsonValues.add(jsonArray.getJSONObject(j));
+                    jsonValues.add(jsonArray.getJSONObject(j)); // add every JSON object in the array to the return list
                 }
             }
         }
@@ -586,63 +708,30 @@ public class Driver {
 
     /**
      * Convert all data for a single EMS meter to a single list of JSON objects.
+     * Both the logger code and module key make a unique identifier for the Meter
      * @param loggerCode Meters / sensor's logger code
      * @param moduleKey Meter / sensor's module key aka logger channel
+     * @return List of all data for the specified BMS meter
+     */
+    private List<JSONObject> getEMSMeterJSON(String loggerCode, String moduleKey){
+        return getBMSMeterJSON(loggerCode, moduleKey, "");
+    }
+
+    /**
+     * Convert all data for a single EMS meter to a single list of JSON objects.
+     * @param loggerCode Meters / sensor's logger code
+     * @param moduleKey Meter / sensor's module key aka logger channel
+     * @param file EMS file name to read from, if unspecified, all EMS files will be read
      * @return List of all data for the specified EMS meter
      */
-    public List<JSONObject> getEMSMeterJSON(String loggerCode, String moduleKey){
+    public List<JSONObject> getEMSMeterJSON(String loggerCode, String moduleKey, String file){
 
         readingJSON = null; // reset JSONObject for reading; precaution
-        List<JSONObject> jsonValues = new ArrayList<>();
+        List<JSONObject> jsonValues = new ArrayList<>(); // to return
 
         /*TODO New EMS metadata does not relate to EMS records, the same logic as getBMSMeterJSON can be used here, but with different filenames and maybe different field names, depending on whether the old metadata is used*/
 
         return jsonValues; // Returns list of JSON objects for all meter readings
-    }
-
-    /**
-     * A list of building names available in the CKAN metadata
-     * @return Array of building names
-     */
-    public String[] getBuildingList() {
-        ArrayList<String> outputList = new ArrayList<>();
-
-        JSONArray loggerList = loggerJSON.getJSONObject("result").getJSONArray("records"); //list of loggers / controllers
-        for (int i = 0; i < loggerList.length(); i++) { // loop through every logger
-            String name = loggerList.getJSONObject(i).getString("Building Name");
-            if (!outputList.contains(name)){
-                outputList.add(name); // add building name of logger to return list, if it hasnt been seen already
-            }
-        }
-
-        /*Convert ArrayList to String array*/
-        String[] outputArray = new String[outputList.size()];
-        outputList.toArray(outputArray);
-        return outputArray;
-    }
-
-    /**
-     * A set of elements from a specified JSON attribute; duplicate elements are ignored
-     * @param JSONObj JSON object to search records
-     * @param toFind Element name to find
-     * @return List of unique element names from JSONObject
-     */
-    public String[] getSpecified(JSONObject JSONObj, String toFind) {
-        ArrayList<String> outputList = new ArrayList<>();
-        JSONArray objList = JSONObj.getJSONObject("result").getJSONArray("records"); // list of JSONObjects
-        for (int i = 0; i < objList.length(); i++) { // loop through every object
-            String name = objList.getJSONObject(i).getString(toFind);
-            if (!outputList.contains(name)){
-                outputList.add(name); // add element name to output
-            }
-        }
-        if (outputList.size() == 0) {
-            System.out.println("WARNING: No elements found for " + toFind + "in JSONObject");
-        }
-        /*Convert ArrayList to String array*/
-        String[] outputArray = new String[outputList.size()];
-        outputArray = outputList.toArray(outputArray);
-        return outputArray;
     }
 
     /**
@@ -693,7 +782,23 @@ public class Driver {
 
         System.out.println("Java Version: " + System.getProperty("java.version"));
         System.out.println("Running...");
-        new Driver();
-    }
 
+        /*Start the driver menu for manual input*/
+//        (new Thread() {
+//            public void run() {
+//                new Driver().serverMenu();
+//            }
+//        }).start();
+
+        /*Update the database every morning*/
+        Calendar date = Calendar.getInstance(); // initialise an object for 8am
+        date.set(Calendar.HOUR_OF_DAY, 8);
+        date.set(Calendar.MINUTE, 0);
+        date.set(Calendar.SECOND, 0);
+        date.set(Calendar.MILLISECOND, 0);
+
+        Timer timer = new Timer(); // Schedule to run every day 8am
+        int millisecInADay = 1000 * 60 * 60 * 24;
+        timer.schedule(new Driver(), date.getTime(), millisecInADay);
+    }
 }

@@ -10,6 +10,7 @@ CREATE TABLE erroneousassets
   logger_code varchar(100) NOT NULL,
   logger_channel varchar(10),
   utility_type varchar(25),
+  most_recent_error timestamp NOT NULL,
 
   PRIMARY KEY (id),
   UNIQUE KEY id_and_logger_info (id, logger_code, logger_channel)
@@ -30,10 +31,11 @@ CREATE TABLE errors
 DROP TABLE IF EXISTS qualitylog;
 CREATE TABLE qualitylog
 (
-    id int NOT NULL auto_increment,
-    total_assets int NOT NULL
+    id int unsigned NOT NULL auto_increment,
+    total_assets int NOT NULL,
     erroneous_assets int NOT NULL,
     error_count int NOT NULL,
+    timeVal timestamp NOT NULL,
 
     PRIMARY KEY (id)
 );
