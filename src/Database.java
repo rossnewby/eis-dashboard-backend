@@ -137,7 +137,7 @@ public class Database {
      */
     public void addError(int errType, String logCode, String logChan, Timestamp time){
         try {
-            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ERROR_DB_NAME+" (error_type, logger_code, logger_channel, timeVal) VALUES(?, ?, ?, ?)");
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ERROR_DB_NAME+" (error_type, logger_code, logger_channel, timeVal) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE id = id");
             stmt.setInt(1, errType); // specify each parameter ('?') in the query
             stmt.setString(2,logCode);
             stmt.setString(3, logChan);
@@ -155,33 +155,14 @@ public class Database {
      * Adds a record to the errors table in the EIS quality database
      * @param errType Value to insert into error type field
      * @param logCode Value to insert into logger code field
-     * @param logChan Value to insert into logger channel field
+     * @param time Value to insert into time field
      */
-    public void addError(int errType, String logCode, String logChan){
+    public void addError(int errType, String logCode, Timestamp time){
         try {
-            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ERROR_DB_NAME+" (error_type, logger_code, logger_channel) VALUES(?, ?, ?)");
+            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ERROR_DB_NAME+" (error_type, logger_code, timeVal) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE id = id");
             stmt.setInt(1, errType); // specify each parameter ('?') in the query
             stmt.setString(2,logCode);
-            stmt.setString(3, logChan);
-
-            int i = stmt.executeUpdate();
-            System.out.println(i +" record(s) added to "+ ERROR_DB_NAME);
-        }
-        catch (Exception e){
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * Adds a record to the errors table in the EIS quality database
-     * @param errType Value to insert into error type field
-     * @param logCode Value to insert into logger code field
-     */
-    public void addError(int errType, String logCode){
-        try {
-            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ERROR_DB_NAME+" (error_type, logger_code) VALUES(?, ?)");
-            stmt.setInt(1, errType); // specify each parameter ('?') in the query
-            stmt.setString(2,logCode);
+            stmt.setTimestamp(3, time);
 
             int i = stmt.executeUpdate();
             System.out.println(i +" record(s) added to "+ ERROR_DB_NAME);
@@ -218,19 +199,16 @@ public class Database {
      * Adds a record to the error type lookup table in the EIS quality database
      * @param id Unique ID for record
      * @param desc Description of the error
+     * @throws SQLException When the lookup value could not be inserted into table
      */
-    public void addLookup(int id, String desc){
-        try {
-            PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ERROR_LOOKUP_DB_NAME+" VALUES(?, ?)");
-            stmt.setInt(1, id); // specify each parameter ('?') in the query
-            stmt.setString(2, desc);
+    public void addLookup(int id, String desc) throws SQLException{
 
-            int i = stmt.executeUpdate();
-            System.out.println(i +" record(s) added to "+ ERROR_LOOKUP_DB_NAME);
-        }
-        catch (Exception e){
-            e.printStackTrace();
-        }
+        PreparedStatement stmt = con.prepareStatement("INSERT INTO "+ERROR_LOOKUP_DB_NAME+" VALUES(?, ?)");
+        stmt.setInt(1, id); // specify each parameter ('?') in the query
+        stmt.setString(2, desc);
+
+        int i = stmt.executeUpdate();
+        System.out.println(i +" record(s) added to "+ ERROR_LOOKUP_DB_NAME);
     }
 
     /**

@@ -13,7 +13,7 @@ CREATE TABLE erroneousassets
   most_recent_error timestamp NOT NULL,
 
   PRIMARY KEY (id),
-  UNIQUE KEY id_and_logger_info (id, logger_code, logger_channel)
+  UNIQUE KEY logger_info (logger_code, logger_channel)
 );
 
 DROP TABLE IF EXISTS errors;
@@ -23,9 +23,10 @@ CREATE TABLE errors
   error_type int NOT NULL,
   logger_code varchar(100) NOT NULL,
   logger_channel varchar(10),
-  timeVal timestamp,
+  timeVal timestamp NOT NULL,
 
-  PRIMARY KEY (id)
+  PRIMARY KEY (id),
+  UNIQUE KEY error_info (error_type, logger_code, logger_channel, timeVal)
 );
 
 DROP TABLE IF EXISTS qualitylog;

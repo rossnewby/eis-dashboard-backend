@@ -279,10 +279,11 @@ public class Driver extends TimerTask {
                 }
                 else if (type.equals(EMS_CLASSIFICATION_GROUP)){ // if the meter is from EMS
                     try {
-                        List<JSONObject> json = getEMSMeterJSON(code, chan, "ems"+fileNameEnding); // List of JSON objects, representing every meter reading
-
-                        /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
                         //TODO Uncomment once JSON values can be read effectively from ckan; refer to TODO in getEMSMeterJSON method
+//                        List<JSONObject> json = getEMSMeterJSON(code, chan, "ems"+fileNameEnding); // List of JSON objects, representing every meter reading
+//
+//                        /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
+//
 //                        if (json.size() == 0){
 //
 //                            errors+=
@@ -471,12 +472,13 @@ public class Driver extends TimerTask {
                 }
                 else if (type.equals(EMS_CLASSIFICATION_GROUP)){ // if the meter is from EMS
                     try {
-                        List<JSONObject> json = getEMSMeterJSON(code, chan); // List of JSON objects, representing every meter reading
-
-                        /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
-                        // TODO Uncomment once JSON values can be read effectively from ckan; refer to TODO in getEMSMeterJSON method
+                        // TODO Uncomment once JSON values can be read effectively from ckan for EMS; refer to TODO in getEMSMeterJSON method
+//                        List<JSONObject> json = getEMSMeterJSON(code, chan); // List of JSON objects, representing every meter reading
+//
+//                        /*If no readings for this meter were found in CKAN; this is the first (and only) error*/
+//
 //                        if (json.size() == 0){
-
+//
 //                            errors++;
 //                            Date now = new Date(); // use DB time value as current time
 //                            Timestamp timestamp = new Timestamp(now.getTime());
@@ -730,6 +732,72 @@ public class Driver extends TimerTask {
         List<JSONObject> jsonValues = new ArrayList<>(); // to return
 
         /*TODO New EMS metadata does not relate to EMS records, the same logic as getBMSMeterJSON can be used here, but with different filenames and maybe different field names, depending on whether the old metadata is used*/
+        try {
+            /*List of EMS files in CKAN*/
+            CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/package_show?id=bms");
+            JSONObject bmsJSON = ckanReq.requestJSON();
+            JSONArray emsList = bmsJSON.getJSONObject("result").getJSONArray("resources"); // Array of EMS files in CKAN (JSON Objects)
+            Map<String, String> fileMap = new HashMap<>();
+            for (int i = 0; i < emsList.length(); i++){ // for every EMS file name in ckan
+
+                String fileName = emsList.getJSONObject(i).getString("name"); // next EMS filename
+
+                if (file.equals("")) { // if no file is specified as parameter, list all EMS filenames
+                    if (!fileName.equals("emsmeta")) { // don't include EMS metadata in list
+
+                        fileMap.put(emsList.getJSONObject(i).getString("id"), fileName); // add file name to list
+                    }
+                }
+                else if (fileName.equals(file)){ // if a file is specified as parameter, only list this filename
+
+                    fileMap.put(emsList.getJSONObject(i).getString("id"), fileName); //add file name to list
+                }
+            }
+
+            readingJSON = new JSONObject(); // empty JSON to repeatedly update with meter data
+
+            /*Get data for the specified meter from every EMS file name listed*/
+            ExecutorService es = Executors.newCachedThreadPool();
+            for (String fileID: fileMap.keySet()) { // for every EMS file
+                es.execute(new Thread() { // execute code on new thread
+                    public void run() {
+                        try {
+                            /*Get meter data from bms file*/
+                            // TODO This is where you need to change the query, EMS doesnt use 'device_id' and 'module_key' in the data, only an 'id', the new metadata should be changing this to make this statement for work, but for now, it doesn't
+                            CKANRequest ckanReq = new CKANRequest("ckan.lancaster.ac.uk/api/3/action/datastore_search_sql?sql=SELECT%20*%20FROM%20\""
+                                    + fileID + "\"%20WHERE%20device_id='"+loggerCode+"'%20AND%20module_key='"+moduleKey+"'");
+                            JSONObject newJSON = ckanReq.requestJSON(); // JSON object of meter data from this file
+
+                            /*Append meter data to JSON*/
+                            JSONArray toAccumulate = newJSON.getJSONObject("result").getJSONArray("records"); // records from JSON object to append
+                            readingJSON.accumulate("records", toAccumulate); // append meter data to the new JSON object
+                        }
+                        catch (Exception e) {
+                            System.out.println("Could not read " + fileMap.get(fileID));
+                            //e.printStackTrace();
+                        }
+                    }
+                });
+            }
+            readingJSON.accumulate("files", fileMap); // append list of files read to JSON
+
+            /*Wait for all thread to end*/
+            es.shutdown();
+            es.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+            // System.out.println("All records read: " + loggerCode + "-" + moduleKey); // debug
+
+            /*Add each JSONObject from meter into a list (which will later be returned)*/
+            JSONArray meterArray = readingJSON.getJSONArray("records");
+            for (int i = 1; i < meterArray.length(); i++) { // for every record, which is a JSON array of JSON arrays
+                JSONArray jsonArray = meterArray.getJSONArray(i); // get the JSON array at position i
+                for (int j = 0; j < jsonArray.length(); j++) {
+                    jsonValues.add(jsonArray.getJSONObject(j)); // add every JSON object in the array to the return list
+                }
+            }
+        }
+        catch (Exception e){
+            e.printStackTrace();
+        }
 
         return jsonValues; // Returns list of JSON objects for all meter readings
     }
